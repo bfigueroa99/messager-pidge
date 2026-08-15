@@ -1,0 +1,36 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+coverage/
+.expo/
+.expo-shared/
+web-build/
+*.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# loop scratch
+.loop/tmp/

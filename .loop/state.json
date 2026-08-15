@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "paused": false,
+  "iteration": 1,
+  "current_item": null,
+  "claimed_at": null,
+  "claimed_by": null,
+  "last_outcome": "bootstrap",
+  "consecutive_failures": 0,
+  "last_hardening_iteration": 0,
+  "last_audit_iteration": 0,
+  "test_count_floor": 86,
+  "branch": "claude/app-development-loop-szg7yj",
+  "budget": {
+    "max_iterations": 60,
+    "stop_after": "2026-09-15T00:00:00Z"
+  },
+  "pr_number": null
+}
