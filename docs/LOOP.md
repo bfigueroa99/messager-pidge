@@ -42,8 +42,16 @@ Read in this order:
 5. `ROADMAP.md`
 6. `docs/QUESTIONS.md` — is anything answered that was blocking?
 
-Then check CI on the previous commit (`mcp__github__actions_list`, then
-`get_job_logs` for any failure).
+Then check CI on the previous commit, **if you have GitHub tools at all**.
+
+Sessions fired by the Routine run without connector (`mcp__github__*`) tools, so
+usually you will not. That is fine and it is not a blocker: `git push` works
+through the container's credentials, and `pnpm run verify` is the real gate.
+If `mcp__github__actions_list` is unavailable, skip straight to §2 — do not try
+to work around it with `curl`, and do not treat the absence as a failure.
+
+When you *do* have the tools (`mcp__github__actions_list`, then `get_job_logs`
+for any failure):
 
 **If CI is red because a check actually ran and failed, that preempts
 everything.** Your item this iteration is "fix CI on `<sha>`". Skip §2.
@@ -131,7 +139,9 @@ Re-run `pnpm run verify` after any review fix.
    `claimed_at: null`, `last_outcome`, `consecutive_failures: 0`, and
    `test_count_floor` = the new total test count.
 5. Commit as `<ITEM-ID>: <imperative summary>`, then push.
-6. Refresh the draft PR description with Done / In progress / Next 3.
+6. Refresh the draft PR description (PR #1) with Done / In progress / Next 3 —
+   **only if you have GitHub tools.** Without them the pushed commits and
+   `docs/JOURNAL.md` are the record, which is enough. Do not block on this.
 
 ## 6. HARDENING iteration (no new features)
 

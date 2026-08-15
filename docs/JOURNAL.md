@@ -64,3 +64,9 @@ knowledge survives a context reset.
     open a PR against — the repository had no commits at all. Do not be confused
     by the one-commit merge in the history.
 - **Follow-ups filed:** Q-003 (enable GitHub Actions).
+
+  - **Sessions fired by the Routine have no `mcp__github__*` tools.** The
+    Routine could not pass connector grants through. `git push` still works via
+    the container's credentials, so this only affects reading CI and editing the
+    PR description — both now explicitly optional in `docs/LOOP.md`. Do not try
+    to work around it with `curl`.
