@@ -42,3 +42,25 @@ knowledge survives a context reset.
     implementation, so if you change `mulberry32` that test is supposed to fail.
 - **Follow-ups filed:** the whole of `ROADMAP.md`; Q-001 (the app's name) and
   Q-002 (a real Supabase project) in `docs/QUESTIONS.md`.
+
+---
+
+## Iteration 1 — 2026-08-15 — protocol fix after the first CI run
+
+- **Outcome:** done
+- **Verify:** typecheck ok · lint ok · 86 tests ok
+- **What landed:** `docs/LOOP.md` §1 now distinguishes a check that ran and
+  failed from one GitHub never scheduled. Q-003 filed.
+- **Surprises for the next agent:**
+  - **GitHub Actions does not currently run in this repository.** Three `verify`
+    runs all completed in ~2 s with `runner_id: 0`, no runner name, no step
+    output and a 404 on the logs. That is a repository/account setting, not a
+    build failure — no commit fixes it.
+  - This nearly deadlocked the loop before it started: the protocol said "CI red
+    preempts everything", which would have spent all 60 iterations trying to fix
+    something outside the repo. **`pnpm run verify` is the real gate.** Treat CI
+    as a second pair of eyes.
+  - `main` is an empty root commit, created only so this branch had a base to
+    open a PR against — the repository had no commits at all. Do not be confused
+    by the one-commit merge in the history.
+- **Follow-ups filed:** Q-003 (enable GitHub Actions).

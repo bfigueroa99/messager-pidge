@@ -45,8 +45,22 @@ Read in this order:
 Then check CI on the previous commit (`mcp__github__actions_list`, then
 `get_job_logs` for any failure).
 
-**If CI is red, that preempts everything.** Your item this iteration is "fix CI
-on `<sha>`". Skip §2.
+**If CI is red because a check actually ran and failed, that preempts
+everything.** Your item this iteration is "fix CI on `<sha>`". Skip §2.
+
+**But distinguish a failing check from a check that never ran.** If the job
+completed in a couple of seconds with `runner_id: 0`, an empty `runner_name`, no
+step output and a 404 on its logs, then GitHub never scheduled it — that is an
+account or repository setting (Actions disabled, or a spending limit), and no
+commit you can push will fix it. In that case:
+
+- Do **not** treat it as your item. You would burn every remaining iteration on
+  something outside the repository.
+- Note it once in `docs/JOURNAL.md` if it is not already noted, make sure a
+  question exists in `docs/QUESTIONS.md`, and carry on with §2.
+- `pnpm run verify` is the real gate regardless. CI is a second pair of eyes, not
+  the source of truth. An iteration that leaves `verify` green locally has done
+  its job.
 
 ## 2. Select exactly one item
 

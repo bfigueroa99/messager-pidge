@@ -59,3 +59,34 @@ gap in `docs/JOURNAL.md`. Work continues; it just cannot verify auth or Realtime
 until this exists.
 
 **Answer:**
+
+---
+
+## Q-003 — [open] — iteration 1 — infrastructure
+
+**Question:** Can GitHub Actions be enabled for this repository?
+
+**Why it matters:** The `verify` workflow is queued and then fails in about two
+seconds with no runner assigned (`runner_id: 0`, empty `runner_name`), no step
+output, and a 404 on its logs. That is GitHub declining to schedule the job, not
+a failing build — three runs behaved identically, including on the very first
+push.
+
+**Likely causes:** Actions disabled for the repository or the account, or a
+spending limit of zero. Both are in repository/account settings and cannot be
+fixed by any commit.
+
+**Impact if left alone:** low but real. `pnpm run verify` runs in every
+iteration and is the actual gate, so the loop keeps working and keeps the branch
+green. What is lost is the independent second check — an iteration that somehow
+leaves a broken commit would not be caught by anything outside itself.
+
+**Note:** `docs/LOOP.md` §1 was amended in iteration 1 so the loop recognises a
+never-scheduled job and does **not** treat it as work. Without that, it would
+have spent all 60 iterations trying to fix something outside the repository.
+
+**My recommendation if you do not answer:** carry on. Local `verify` is a strong
+gate on its own, and CI will start working the moment the setting changes, with
+nothing to redeploy.
+
+**Answer:**
