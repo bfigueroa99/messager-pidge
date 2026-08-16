@@ -70,3 +70,27 @@ knowledge survives a context reset.
     the container's credentials, so this only affects reading CI and editing the
     PR description — both now explicitly optional in `docs/LOOP.md`. Do not try
     to work around it with `curl`.
+
+---
+
+## Iteration 2 — 2026-08-16 — the first fired session failed silently
+
+- **Outcome:** failed (diagnosed from outside; the session left no trace of its own)
+- **What happened:** the first Routine firing ran for 3.5 minutes, spent ~11k
+  output tokens, went IDLE, and pushed nothing. No remote branch changed. It did
+  not record why.
+- **Surprises for the next agent:**
+  - **The environment's configured source revision is `refs/heads/master`, which
+    does not exist in this repository** (only `main` and the working branch do).
+    A fired container may therefore hand you an empty, detached, or missing
+    checkout. `docs/LOOP.md` §0 now locates the repo across several paths and
+    clones it fresh if needed. Do not assume a working directory.
+  - The deeper failure was not stopping — it was **stopping without a trace**.
+    From outside, "container broken", "protocol wrong" and "agent gave up" all
+    look identical. `docs/LOOP.md` now opens with a rule that outranks the rest:
+    finish with a pushed commit, or a pushed explanation, or an explicit
+    "paused". Never silence.
+  - A disconnected fired session is **not reachable** via `ListAgents` /
+    `SendMessage`, so a future agent cannot interrogate a failed predecessor.
+    The repository is the only channel between iterations. Write things down.
+- **Follow-ups filed:** none — both fixes landed in this commit.

@@ -6,16 +6,55 @@ knows because you wrote it to a file and pushed it.
 
 Execute these steps in order. Do not skip. Do not reorder.
 
+## The one rule that outranks everything else
+
+**Never end your turn silently.** You must finish in exactly one of three states:
+
+1. a commit pushed to the working branch, or
+2. a pushed journal entry saying what blocked you, or
+3. a clear statement that `paused` is true and you deliberately did nothing.
+
+A fired session that stops with no pushed trace is the single worst outcome
+available to you: nobody can tell whether you failed, what you tried, or whether
+it will happen again. If you find yourself about to stop for any other reason —
+you cannot find the repository, a command is unavailable, the protocol seems
+wrong — **that is itself the iteration's finding.** Write it down, push it, and
+say so plainly. Iteration 1 of this loop failed exactly this way, which is why
+this rule is at the top.
+
 ---
 
-## 0. Sync, then check the kill switch
+## 0. Find the repository, sync, then check the kill switch
+
+Do not assume a working directory. Containers differ between firings.
 
 ```bash
-cd /home/user/messager-pidge   # or wherever the repo was cloned
+# 1. locate the checkout
+for d in /home/user/messager-pidge /workspace/messager-pidge "$PWD"; do
+  [ -d "$d/.git" ] && cd "$d" && break
+done
+
+# 2. if none of those had it, find it
+[ -d .git ] || cd "$(dirname "$(find / -maxdepth 6 -type d -name .git \
+     -path '*messager-pidge*' 2>/dev/null | head -1)")"
+
+# 3. if it still is not here, clone it fresh — do NOT give up
+[ -d .git ] || { git clone https://github.com/bfigueroa99/messager-pidge.git \
+     /home/user/messager-pidge && cd /home/user/messager-pidge; }
+
 git fetch origin
 git checkout -B claude/app-development-loop-szg7yj origin/claude/app-development-loop-szg7yj
 git reset --hard origin/claude/app-development-loop-szg7yj
+git log --oneline -1     # confirm you are actually on the branch before continuing
 ```
+
+The environment's configured source revision is `refs/heads/master`, a branch
+that **does not exist** in this repository — only `main` and the working branch
+do. So the container may hand you an empty, detached, or missing checkout. That
+is expected; step 3 handles it. It is not a reason to stop.
+
+If after all three steps you still have no repository, stop and report that as
+the finding (see the rule above) — but say so loudly, do not just end.
 
 Read `.loop/state.json`:
 
