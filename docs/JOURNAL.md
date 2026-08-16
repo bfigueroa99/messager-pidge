@@ -94,3 +94,35 @@ knowledge survives a context reset.
     `SendMessage`, so a future agent cannot interrogate a failed predecessor.
     The repository is the only channel between iterations. Write things down.
 - **Follow-ups filed:** none — both fixes landed in this commit.
+
+---
+
+## Iteration 3 — 2026-08-16 — a controlled diagnostic settled it
+
+- **Outcome:** done. Full report in `docs/DIAGNOSTIC.md`.
+- **What we learned:** a freshly created session in this environment can do
+  *everything* the loop needs. It reached the repo, fetched, checked out the
+  branch, installed 390 packages in 2 s, ran `pnpm run verify` green in 58 s,
+  and pushed. **It was never blocked by a permission**, not once. So the two
+  silent failures were not caused by permissions, network, the proxy, or the
+  toolchain — all of which were suspects and are now ruled out.
+- **Surprises for the next agent:**
+  - **`node_modules` does NOT survive into a new container. Run `pnpm install`
+    first, always.** The protocol did not say so until now, which meant an agent
+    following it exactly would run `verify` with no `tsc`, `eslint` or `jest`
+    installed and fail for a reason unrelated to its own work. Fixed in §0.
+  - **`pnpm run verify` takes ~60 s, about 50 of them the PGlite suite compiling
+    Postgres to WASM.** It is working, not hung. Do not kill it, do not run two
+    at once.
+  - The container clones **only the working branch**; `origin/main` does not
+    exist locally until you `git fetch origin`.
+  - The successful diagnostic differed from the two failed firings in exactly
+    two ways: it was created with an explicit `source_revision` pointing at the
+    working branch (the Routine's sessions inherit the environment's
+    `refs/heads/master`, which does not exist), and it carried a self-contained
+    prompt with a hard "you must push something" rule. Both failed firings had
+    also read the *old* `docs/LOOP.md`, which lacked the repo-discovery fallback
+    and the never-be-silent rule — those landed one minute after the second
+    firing began.
+- **Follow-ups filed:** none. Next step is to re-enable the Routine and fire once
+  against the corrected protocol.

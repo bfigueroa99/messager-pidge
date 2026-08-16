@@ -46,7 +46,20 @@ git fetch origin
 git checkout -B claude/app-development-loop-szg7yj origin/claude/app-development-loop-szg7yj
 git reset --hard origin/claude/app-development-loop-szg7yj
 git log --oneline -1     # confirm you are actually on the branch before continuing
+
+# 4. install dependencies — node_modules does NOT survive into a new container
+pnpm install             # ~2 seconds warm registry; required before anything else
 ```
+
+**`pnpm install` is not optional and it is not cached.** A fresh container
+arrives with `node_modules` absent, so `tsc`, `eslint` and `jest` are all
+missing until you run it. Skipping this makes `pnpm run verify` fail for a
+reason that has nothing to do with your work.
+
+Timing, so you do not mistake slowness for a hang: `pnpm install` takes about
+2 seconds, and `pnpm run verify` takes about **60 seconds** — roughly 50 of
+which are the PGlite suite compiling Postgres to WASM. It is working, not stuck.
+Do not kill it and do not run it twice in parallel.
 
 The environment's configured source revision is `refs/heads/master`, a branch
 that **does not exist** in this repository — only `main` and the working branch
