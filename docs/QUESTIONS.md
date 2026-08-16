@@ -5,7 +5,7 @@ ambiguity, credentials, spend, or a conflict with `docs/PRODUCT.md`. A hard bug
 or an unfamiliar API is **not** a question — that is the job.
 
 To answer: fill in `**Answer:**` and change `[open]` to `[answered]`. The next
-iteration picks it up within 6 hours; there is nothing to restart.
+iteration picks it up on the next firing; there is nothing to restart.
 
 If a question sits open for more than 24 hours and its recommendation is safe,
 the loop takes its own recommendation, records an ADR, and proceeds. It degrades

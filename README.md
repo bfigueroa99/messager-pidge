@@ -27,7 +27,7 @@ pnpm run verify        # typecheck + lint + coverage + both gates
 
 ## How this repo is built
 
-It is built by an autonomous loop: every six hours a fresh session syncs this
+It is built by an autonomous loop: every twelve hours a fresh session syncs this
 branch, reads [`docs/LOOP.md`](docs/LOOP.md), takes the topmost `todo` item from
 [`ROADMAP.md`](ROADMAP.md), implements it, verifies it, and pushes. Its context
 is discarded each time, so everything it knows lives in files:
@@ -48,7 +48,7 @@ works from a phone via the GitHub web editor.
 
 **To steer it:** reorder `ROADMAP.md`, insert an item at the top, mark one
 `blocked`, or answer a question in `docs/QUESTIONS.md`. Every iteration resets
-hard to `origin`, so any edit takes effect within six hours with nothing to
+hard to `origin`, so any edit takes effect on the next firing with nothing to
 restart.
 
 ## Architecture
