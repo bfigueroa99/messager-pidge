@@ -38,8 +38,11 @@ pnpm test -- --selectProjects flight-sim   # fast: the pure engine only
 pnpm test -- --selectProjects db           # slower: PGlite + real migrations
 ```
 
-`verify` is what the pre-commit hook runs, what CI runs, and what every
-iteration must leave green.
+**Nothing runs `verify` for you.** There is no pre-commit hook — `core.hooksPath`
+is unset and `.git/hooks` holds only the stock `.sample` files in a fresh
+container — and GitHub Actions is not currently scheduling jobs for this
+repository (Q-003). So `verify` is not a safety net that catches you; it is a
+command you must run yourself before every commit. Run it, read it, then commit.
 
 ## Testing
 
