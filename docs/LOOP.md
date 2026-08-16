@@ -56,6 +56,14 @@ in silence. So:
 6. Even a denial on `git push` is recoverable — the bare form has worked. If
    every form fails, say so explicitly in your final message, quoting the error.
 
+`.claude/settings.json` in this repo allowlists `git`, `pnpm install`,
+`pnpm run *` and `Skill` for exactly this reason. **Treat it as a reduction in
+friction, not a guarantee** — the denials above were measured on commands that
+allowlist now covers, so if one still gets through, rules 1–6 remain the
+answer. It also deliberately denies force-push, `sudo`, `curl` and `wget`: an
+unattended agent has no business rewriting published history or pulling code off
+the internet.
+
 ---
 
 ## 0. Find the repository, sync, then check the kill switch
