@@ -90,3 +90,42 @@ gate on its own, and CI will start working the moment the setting changes, with
 nothing to redeploy.
 
 **Answer:**
+
+---
+
+## Q-004 — [open] — iteration 5 — infrastructure — **the loop is paused on this**
+
+**Question:** Can the environment's configured git source revision be changed
+from `refs/heads/master` to the working branch (or to `main`)?
+
+**Why blocking:** This is the last uncontrolled variable, and the loop is
+disabled until it is resolved. Three Routine firings produced nothing and left
+no trace. A session created by hand with an explicit `source_revision` pointing
+at the working branch did the entire job — clone, install, `verify` green,
+push — in under four minutes. The environment is `env_017bAB2EkLZzvTxv8oNdRajs`,
+and its stored revision is `refs/heads/master`, **a branch that has never
+existed in this repository**: it only has `main` and the working branch.
+
+**The evidence that it dies early:** `docs/LOOP.md` §2 makes a session push a
+*claim* commit before implementing anything — seconds of work. No claim commit
+ever appeared. So the session never reached §2; it failed in §0/§1, while
+syncing or orienting. Every mitigation shipped so far (repo-discovery fallback,
+`pnpm install`, denial resilience, the git/pnpm allowlist) applies to §3 onward,
+which is why none of them changed the outcome.
+
+**What was already ruled out** — see `docs/DIAGNOSTIC.md`: container, network,
+npm registry, git remote, toolchain, permission surface.
+
+**What is needed:** in the environment's settings, point the source at
+`claude/app-development-loop-szg7yj` (or `main`). This cannot be done from
+inside the repository, and `create_trigger` exposes no `source_revision`
+parameter to override it per-Routine.
+
+**My recommendation if you do not answer:** leave the Routine disabled. Firing
+it again without changing this would burn containers to reproduce a known
+failure. The bootstrap in this branch stands on its own and is unaffected.
+
+**To resume once fixed:** `update_trigger({trigger_id:
+"trig_01E64KH7PJ17htCeFnrcpqkf", enabled: true})`. Nothing else needs rebuilding.
+
+**Answer:**

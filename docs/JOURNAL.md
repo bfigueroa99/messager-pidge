@@ -152,3 +152,35 @@ knowledge survives a context reset.
   protocol. If denials turn out to be frequent rather than occasional, the next
   lever is a `.claude/settings.json` allowlist — which needs the owner's
   consent, since it widens what an unattended agent may run.
+
+---
+
+## Iteration 5 — 2026-08-16 — the loop is paused; the cause is outside the repo
+
+- **Outcome:** the Routine is disabled. Nothing in this repository will fix it.
+- **What happened:** the third firing (12:17:41 UTC, jitter over a 12:11 cron)
+  pushed nothing in 3.5 hours and left no trace, exactly like the first two —
+  this time *with* the hardened protocol and *with* `.claude/settings.json`
+  allowlisting git and pnpm. Two mitigations, no change in outcome.
+- **The sharpest clue, and why it points outward:** `docs/LOOP.md` §2 requires a
+  session to commit and push a **claim** *before* implementing anything. That
+  push takes seconds. Its absence means the session never reached §2 at all — it
+  died in §0/§1, while syncing or orienting, before it had any work to do. Every
+  fix we shipped applies to §3 onward, which is why none of them moved the
+  needle.
+- **What is already ruled out** (see `docs/DIAGNOSTIC.md`): the container, the
+  network, the npm registry, the git remote, the toolchain, and the permission
+  surface. A session created with an explicit `source_revision` did the entire
+  job — clone, install, verify green, push — in under four minutes.
+- **The one difference left:** Routine-fired sessions inherit the environment's
+  configured source, `refs/heads/master`, which **does not exist** in this
+  repository. The successful diagnostic was created with `source_revision` set
+  to the working branch. That is the only variable not yet controlled, and it
+  sits in the environment configuration, not in git.
+- **Surprises for the next agent:**
+  - **Do not spend an iteration re-fixing `docs/LOOP.md`.** Three protocol
+    revisions and an allowlist produced identical silence. The protocol is not
+    what is failing.
+  - A trace-less failure is still evidence: **what did not get pushed tells you
+    where the session died.** No claim commit means it never selected an item.
+- **Follow-ups filed:** Q-004 (fix the environment's source revision).
