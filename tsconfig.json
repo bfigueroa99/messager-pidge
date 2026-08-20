@@ -1,4 +1,4 @@
 {
   "files": [],
-  "references": [{ "path": "./packages/flight-sim" }]
+  "references": [{ "path": "./packages/flight-sim" }, { "path": "./apps/mobile" }]
 }

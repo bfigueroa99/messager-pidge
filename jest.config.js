@@ -30,6 +30,7 @@ module.exports = {
         '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/supabase/tests/tsconfig.json' }],
       },
     },
+    '<rootDir>/apps/mobile',
   ],
   collectCoverageFrom: [
     'packages/flight-sim/src/**/*.ts',
