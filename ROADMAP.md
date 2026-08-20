@@ -212,7 +212,7 @@ fall back to. Anything you add must support the New Architecture.
 
 ### [ ] M0-09 — The release function refuses a bird that is not yours, not idle, or dead
 
-**Status:** todo · **Size:** M · **Depends on:** M0-05
+**Status:** in-progress · **Size:** M · **Depends on:** M0-05
 **Found by:** `/code-review --effort high`, iteration 2 — see `docs/JOURNAL.md`
 
 **Why:** `release_pigeon` currently checks nothing about the bird. Confirmed
