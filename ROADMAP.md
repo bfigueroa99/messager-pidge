@@ -171,7 +171,7 @@ gates, it drifts into a normal messenger with a bird theme.
 
 ### [ ] M0-07 — Expo app shell
 
-**Status:** todo · **Size:** M · **Depends on:** M0-01
+**Status:** in-progress · **Size:** M · **Depends on:** M0-01
 **Read first:** `CLAUDE.md`, `docs/PRODUCT.md` §5
 
 **Why:** There is no app yet — only an engine and a database. Everything from
