@@ -93,7 +93,7 @@ nothing to redeploy.
 
 ---
 
-## Q-004 — [open] — iteration 5 — infrastructure — **the loop is paused on this**
+## Q-004 — [answered] — iteration 5 — infrastructure — **RESOLVED 2026-08-20**
 
 **Question:** Can the environment's configured git source revision be changed
 from `refs/heads/master` to the working branch (or to `main`)?
@@ -129,3 +129,15 @@ failure. The bootstrap in this branch stands on its own and is unaffected.
 "trig_01E64KH7PJ17htCeFnrcpqkf", enabled: true})`. Nothing else needs rebuilding.
 
 **Answer:**
+
+**Answer (2026-08-20):** resolved. The Routine gained an explicit
+`sources: [{git_repository: {url: ".../messager-pidge"}}]` entry at 20:35 UTC —
+it previously had none and so inherited the environment's `refs/heads/master`.
+It fired at 20:42:56 and the session worked: it synced, claimed `M0-07`, built
+the Expo shell, fixed two blockers, ran `verify` green and landed the item in 32
+minutes. The diagnosis in this question was correct — the cause was how sessions
+were sourced, not anything in the repository.
+
+**Standing note for future agents:** if firings ever go silent again, check the
+Routine's `sources` before touching `docs/LOOP.md`. Three protocol revisions and
+a permission allowlist produced no change; one source entry fixed it.
