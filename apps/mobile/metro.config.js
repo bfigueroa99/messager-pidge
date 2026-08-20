@@ -16,9 +16,9 @@ config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(workspaceRoot, 'node_modules'),
 ];
-// pnpm symlinks every dependency; without this Metro resolves through the link
-// and then fails to find the package's own dependencies.
+// pnpm symlinks every dependency, so Metro must follow links and must keep
+// walking parent directories: a package in the store finds its own dependencies
+// in a sibling node_modules, which disabling hierarchical lookup would hide.
 config.resolver.unstable_enableSymlinks = true;
-config.resolver.disableHierarchicalLookup = true;
 
 module.exports = config;

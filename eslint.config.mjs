@@ -20,6 +20,12 @@ export default tseslint.config(
       sourceType: 'commonjs',
       globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
     },
+    rules: {
+      // These are CommonJS tool configs — Metro, Babel and Jest all load them
+      // with require(). Banning require() in a file that cannot use import is
+      // just noise.
+      '@typescript-eslint/no-require-imports': 'off',
+    },
   },
   {
     rules: {

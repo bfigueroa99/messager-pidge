@@ -1,6 +1,8 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
-import { APP_NAME, APP_SLUG, BUNDLE_ID } from './src/config/app-name';
+// Expo transpiles this file on its own, so a relative import has to be one the
+// plain Node `require` can resolve afterwards — JSON, not a sibling TS module.
+import identity from './src/config/app-name.json';
 
 /**
  * A build variant is chosen by `APP_VARIANT`, which EAS sets per profile. The
@@ -10,22 +12,22 @@ import { APP_NAME, APP_SLUG, BUNDLE_ID } from './src/config/app-name';
 const VARIANT = process.env.APP_VARIANT ?? 'production';
 
 const suffix = VARIANT === 'production' ? '' : `.${VARIANT}`;
-const label = VARIANT === 'production' ? APP_NAME : `${APP_NAME} (${VARIANT})`;
+const label = VARIANT === 'production' ? identity.name : `${identity.name} (${VARIANT})`;
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: label,
-  slug: APP_SLUG,
-  scheme: APP_SLUG,
+  slug: identity.slug,
+  scheme: identity.slug,
   version: '0.0.1',
   orientation: 'portrait',
   userInterfaceStyle: 'dark',
   ios: {
-    bundleIdentifier: `${BUNDLE_ID}${suffix}`,
+    bundleIdentifier: `${identity.bundleId}${suffix}`,
     supportsTablet: false,
   },
   android: {
-    package: `${BUNDLE_ID}${suffix}`.replace(/-/g, '_'),
+    package: `${identity.bundleId}${suffix}`.replace(/-/g, '_'),
   },
   web: {
     bundler: 'metro',

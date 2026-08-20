@@ -9,7 +9,7 @@
   "consecutive_failures": 0,
   "last_hardening_iteration": 0,
   "last_audit_iteration": 0,
-  "test_count_floor": 86,
+  "test_count_floor": 91,
   "branch": "claude/app-development-loop-szg7yj",
   "budget": {
     "max_iterations": 60,
