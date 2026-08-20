@@ -169,9 +169,9 @@ gates, it drifts into a normal messenger with a bird theme.
 
 ---
 
-### [ ] M0-07 — Expo app shell
+### [x] M0-07 — Expo app shell
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-01
+**Status:** done · **Size:** M · **Depends on:** M0-01
 **Read first:** `CLAUDE.md`, `docs/PRODUCT.md` §5
 
 **Why:** There is no app yet — only an engine and a database. Everything from
@@ -198,15 +198,127 @@ later.
 - Do not add any native module that breaks `expo start --web`.
 
 **Acceptance criteria:**
-- [ ] `pnpm run verify` still exits 0 with the new package in the workspace
-- [ ] `expo export -p web` produces a bundle without error
-- [ ] a component test renders the index route and finds the app name
-- [ ] importing `@pidge/flight-sim` from `apps/mobile` typechecks
+- [x] `pnpm run verify` still exits 0 with the new package in the workspace
+- [x] `expo export -p web` produces a bundle without error
+- [x] a component test renders the index route and finds the app name
+- [x] importing `@pidge/flight-sim` from `apps/mobile` typechecks
 
 **Verify with:** `pnpm run verify && pnpm --filter mobile exec expo export -p web`
 
 **Notes:** Expo SDK 57 is bridgeless-only; there is no legacy architecture to
 fall back to. Anything you add must support the New Architecture.
+
+---
+
+### [ ] M0-09 — The release function refuses a bird that is not yours, not idle, or dead
+
+**Status:** todo · **Size:** M · **Depends on:** M0-05
+**Found by:** `/code-review --effort high`, iteration 2 — see `docs/JOURNAL.md`
+
+**Why:** `release_pigeon` currently checks nothing about the bird. Confirmed
+against the real migrations in PGlite: one user can release another user's
+pigeon, and the same bird can carry two flights at once. The reaper compounds
+it — its `birds` CTE rewrites `is_alive`, `died_at` and `death_flight_id`
+unconditionally, so delivering a later flight brings a dead bird back to life.
+That is `PRODUCT.md` §8 "no resurrect", enforced by nothing.
+
+**Do:** a new forward-only migration adding the guards, and tests for each.
+
+**Do NOT:** edit `0004_release_and_reaper.sql` — migrations are forward-only.
+
+**Acceptance criteria:**
+- [ ] a user cannot release a bird belonging to someone else
+- [ ] a bird already in the air cannot be released again
+- [ ] a dead bird cannot be released
+- [ ] delivering a flight never resurrects a bird that died on an earlier one
+
+**Touches:** `supabase/migrations/0005_*.sql`, `supabase/tests/rls/*.test.ts`
+
+---
+
+### [ ] M0-10 — Message visibility must be gated on `now()`, not on the reaper
+
+**Status:** todo · **Size:** S · **Depends on:** M0-05
+**Read first:** `docs/DECISIONS.md` ADR-002
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** ADR-002 and INV-5 say the body becomes readable when the policy's own
+`now()` says the bird has landed, precisely so a cron outage delays a
+notification but never a message. `bodies_select_recipient` instead reads the
+reaper-set `status`/`outcome` columns. Confirmed: with cron down, a flight that
+landed eight hours ago is unreadable. The existing test runs the reaper first,
+so it passes without covering the guarantee it claims.
+
+**Acceptance criteria:**
+- [ ] the recipient can read a landed flight's note with the reaper never run
+- [ ] a doomed flight's note stays unreadable with the reaper never run
+- [ ] the in-flight cases still hold with the reaper never run
+
+**Touches:** `supabase/migrations/0005_*.sql`, `supabase/tests/rls/visibility.test.ts`
+
+---
+
+### [ ] M0-11 — The loft snap: wrap the antimeridian, weight by latitude, fail loudly
+
+**Status:** todo · **Size:** M · **Depends on:** M0-05
+**Read first:** `docs/PRODUCT.md` §9, INV-7
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** `snap_profile_location` is the single enforcement point for INV-7 and
+it has four defects. It compares raw squared degrees, so it neither wraps at
+±180 nor scales longitude by cos(lat): (-18.2, -179.9) snaps to Nuku'alofa,
+560 km away in the wrong country, rather than Suva at 175 km. Clearing a loft
+returns early and leaves `city_id`/`city_label` stale, so withdrawing your
+location still shows correspondents your city. `select … into` with no
+`NOT FOUND` guard silently nulls the coordinates if `cities` is empty or
+unreadable. And it is the only function here without a pinned `search_path`.
+
+**Acceptance criteria:**
+- [ ] a point just west of the antimeridian snaps to the city just east of it
+- [ ] a high-latitude point snaps to the nearest city by ground distance
+- [ ] clearing the loft clears the city label with it
+- [ ] the trigger raises rather than nulling a coordinate when no city matches
+- [ ] the function runs with a pinned search_path
+
+**Touches:** `supabase/migrations/0005_*.sql`, `supabase/tests/rls/*.test.ts`
+
+---
+
+### [ ] M0-12 — `arcSegments` must not drop the origin at the antimeridian
+
+**Status:** todo · **Size:** S · **Depends on:** M0-02
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** `splitAtAntimeridian` discards single-point segments. When the very
+first sample crosses ±180 the origin vertex is one of those, so the drawn route
+starts 135 km from the loft it left. INV-6 says the chart shows the bird's true
+position; that includes where it took off.
+
+**Acceptance criteria:**
+- [ ] a route starting just west of the antimeridian keeps its origin vertex
+- [ ] every segment of a split route still contains at least two points
+- [ ] the sum-of-segments property still holds across the seam
+
+**Touches:** `packages/flight-sim/src/geo.ts`, `geo.test.ts`
+
+---
+
+### [ ] M0-13 — The roadmap gate must count test names, not any mention
+
+**Status:** todo · **Size:** S · **Depends on:** M0-06
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** `check-roadmap-tests.mjs` counts `[ID]` anywhere in a test file's text,
+so a comment mentioning an item satisfies "no checkbox without a test". The gate
+is the loop's honesty mechanism; a gate that can be satisfied by a comment is
+worse than none, because it reads as evidence.
+
+**Acceptance criteria:**
+- [ ] an ID appearing only in a comment does not count as evidence
+- [ ] an ID inside an `it()` or `test()` name does count
+- [ ] the gate still passes on the repository as it stands
+
+**Touches:** `scripts/check-roadmap-tests.mjs`, `tests/*.test.ts`
 
 ---
 

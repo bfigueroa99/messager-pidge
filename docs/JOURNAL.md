@@ -184,3 +184,55 @@ knowledge survives a context reset.
   - A trace-less failure is still evidence: **what did not get pushed tells you
     where the session died.** No claim commit means it never selected an item.
 - **Follow-ups filed:** Q-004 (fix the environment's source revision).
+
+---
+
+## Iteration 2 — 2026-08-20 — M0-07, the Expo app shell
+
+- **Outcome:** done
+- **Verify:** typecheck ok · lint ok · 91 tests ok · flight-sim coverage 99.5%
+  statements / 89.7% branches
+- **What landed:** `apps/mobile` — Expo SDK 57, React Native 0.86, `expo-router`
+  file routing, a typed `app.config.ts` with EAS `development`/`preview`/
+  `production` profiles, a monorepo-aware Metro config, and one route rendering
+  the app name. Five tests carry `[M0-07]`, one of which runs the real
+  `expo export -p web`. ADR-008 records why component tests use the web preset.
+- **The loop fired and worked.** Three previous firings pushed nothing. This one
+  reached the repository on the first try, claimed `M0-07`, and pushed three
+  times. Whatever Q-004 describes, it did not stop this session — but note that
+  this session *did* have `mcp__github__*` tools, which iteration 1 said fired
+  sessions do not. So the firing conditions are not identical to the ones that
+  failed, and Q-004 should not be closed on this evidence alone.
+- **Surprises for the next agent:**
+  - **`jest-expo`'s native preset cannot run under Jest 30.** Not "some tests
+    fail" — an empty test file fails to load, because Expo's lazy globals
+    `require()` inside their getters and Jest 30 forbids module loads outside a
+    test body. `jest-expo/web` works. Do not spend an hour on it; read ADR-008.
+  - **Do not disable Metro's `disableHierarchicalLookup` under pnpm.** Every
+    monorepo guide says to set it, and every one of those guides assumes a
+    hoisted `node_modules`. Under pnpm a package in the store finds its own
+    dependencies in a *sibling* directory, so disabling the parent walk breaks
+    resolution deep inside `expo-font` with a message that looks like a missing
+    dependency. `watchFolders` + `nodeModulesPaths` are the parts you do need.
+  - **`app.config.ts` is transpiled alone.** It cannot import a sibling `.ts`
+    module — the transpiled `require('./src/config/app-name')` finds nothing at
+    config-load time. JSON resolves. The app's name, slug and bundle id
+    therefore live in `src/config/app-name.json`.
+  - **Static web rendering needs `expo-font` as a direct dependency** of the app
+    under pnpm, even though nothing in our code imports it:
+    `@expo/router-server` reaches for `expo-font/build/server`.
+  - **`pnpm test -- <args>` does not pass flags through.** The trailing `--`
+    means jest sees a positional, so `pnpm test -- --selectProjects mobile`
+    silently becomes a *path* filter matching `apps/mobile`. It looks like it
+    worked. Filter by path on purpose, or run `jest` with the flag directly.
+  - **`verify` now takes ~85 s**, not the ~60 s `docs/LOOP.md` quotes: the
+    PGlite suite ran 74 s here and the web-export test adds ~8 s.
+- **Follow-ups filed:** `M0-09` … `M0-13`, all from `/code-review --effort high`
+  run over the branch. Two of them are invariant violations rather than
+  tidiness, which is why they sit above `M0-08`: `release_pigeon` guards nothing
+  about the bird (anyone can release anyone's pigeon, twice, and a delivery
+  resurrects a dead one — `PRODUCT.md` §8 forbids resurrection), and
+  `bodies_select_recipient` gates on the reaper's status columns rather than on
+  `now()`, which is exactly what ADR-002 exists to prevent. The review verified
+  both against the real migrations in PGlite. None of it is in this item's
+  **Touches**, so none of it was fixed here.

@@ -103,3 +103,27 @@ it with a new one.
   first item that actually renders a map. Dashed-polyline support on Apple Maps
   is the specific unknown; `arcSegments()` already returns split segments, so
   dashes can be faked with alternating polylines if needed.
+
+## ADR-008 — Component tests run through `jest-expo/web`, not the native preset
+
+- **Date:** 2026-08-20 · **Iteration:** 2 · **Status:** accepted
+- **Context:** `jest-expo@57` is built against Jest 29 — it depends on Jest 29's
+  `babel-jest`, `jest-snapshot` and `jest-environment-jsdom` — while this repo
+  runs Jest 30. Under the native preset every mobile suite fails before a single
+  test executes: Expo installs lazy globals (`fetch`,
+  `__ExpoImportMetaRegistry`) whose getters `require()` a module, and Jest 30
+  refuses to load modules outside a test body ("You are trying to `import` a
+  file outside of the scope of the test code"). An empty test file reproduces it.
+- **Decision:** the `mobile` Jest project uses `preset: 'jest-expo/web'` — jsdom
+  plus `react-native-web` — and components are asserted with
+  `@testing-library/react` rather than `@testing-library/react-native`.
+- **Consequences:** component tests exercise the same web renderer that `M0-08`
+  screenshots and that this container can actually see, which is the only render
+  path verifiable here anyway. What is not covered is native-only behaviour —
+  platform-split files, native modules, gesture handling. Those need a device or
+  a real simulator, and `CLAUDE.md`'s layering rule already says logic must sit
+  in `packages/flight-sim` rather than in components for exactly that reason.
+- **Alternatives rejected:** downgrading the whole repo to Jest 29 to satisfy
+  Expo (drags the working PGlite suite and ts-jest along for a UI-only problem);
+  waiting for a `jest-expo` that supports Jest 30 (blocks every UI item until an
+  upstream release).
