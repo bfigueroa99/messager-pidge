@@ -242,9 +242,9 @@ file exposed — see the journal).
 
 ---
 
-### [ ] M0-10 — Message visibility must be gated on `now()`, not on the reaper
+### [x] M0-10 — Message visibility must be gated on `now()`, not on the reaper
 
-**Status:** in-progress · **Size:** S · **Depends on:** M0-05
+**Status:** done · **Size:** S · **Depends on:** M0-05
 **Read first:** `docs/DECISIONS.md` ADR-002
 **Found by:** `/code-review --effort high`, iteration 2
 
@@ -256,11 +256,14 @@ landed eight hours ago is unreadable. The existing test runs the reaper first,
 so it passes without covering the guarantee it claims.
 
 **Acceptance criteria:**
-- [ ] the recipient can read a landed flight's note with the reaper never run
-- [ ] a doomed flight's note stays unreadable with the reaper never run
-- [ ] the in-flight cases still hold with the reaper never run
+- [x] the recipient can read a landed flight's note with the reaper never run
+- [x] a doomed flight's note stays unreadable with the reaper never run
+- [x] the in-flight cases still hold with the reaper never run
 
-**Touches:** `supabase/migrations/0005_*.sql`, `supabase/tests/rls/visibility.test.ts`
+**Touches:** `supabase/migrations/0007_visibility_ignores_reaper.sql` (the
+`Touches:` line's own `0005_*.sql` guess was stale — see `M0-09`'s note, `0005`
+was already taken before this item was filed; `0006` was taken too, by this
+item's predecessor), `supabase/tests/rls/visibility.test.ts`
 
 ---
 
@@ -325,6 +328,36 @@ worse than none, because it reads as evidence.
 - [ ] the gate still passes on the repository as it stands
 
 **Touches:** `scripts/check-roadmap-tests.mjs`, `tests/*.test.ts`
+
+---
+
+### [ ] M0-14 — Give `apps/mobile`'s composite project an `outDir`
+
+**Status:** todo · **Size:** S · **Depends on:** M0-07
+**Found by:** iteration 3, while landing `M0-10`
+
+**Why:** `packages/flight-sim/tsconfig.json` sets `rootDir`/`outDir` so its
+compiled output lands in a gitignored `dist/`. `apps/mobile/tsconfig.json` sets
+neither, and the root `tsconfig.json` references both projects as composite —
+composite projects must emit declarations for other projects to reference.
+Observed once, in this iteration's fresh container: the first `tsc -b` after
+`pnpm install` emitted `.js`/`.d.ts` files next to every `apps/mobile` source
+file (`app.config.ts`, `app/index.tsx`, `src/config/app-name.ts`, the shell
+test), untracked and not covered by `.gitignore`, which then failed `eslint .`
+with `no-undef` on the plain-JS output. It did not reproduce on any later run
+in the same container — the trigger looks narrow (possibly whatever the
+`unrs-resolver` ignored-build-script warning left unfinished) — but the missing
+`outDir` is real regardless of how reliably it fires, and a `verify` that goes
+red on a phantom file with no diff to point at is a bad failure mode for an
+unattended loop to hit.
+
+**Acceptance criteria:**
+- [ ] `apps/mobile/tsconfig.json` has an `outDir` outside the source tree
+- [ ] `pnpm run typecheck` from a clean `node_modules` produces no `.js`/`.d.ts`
+      file under `apps/mobile/app` or `apps/mobile/src`
+- [ ] `pnpm run verify` still exits 0
+
+**Touches:** `apps/mobile/tsconfig.json`, `.gitignore`
 
 ---
 

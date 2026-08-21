@@ -174,6 +174,52 @@ describe('the outcome is a real secret', () => {
   });
 });
 
+describe('visibility is gated on now(), independent of the reaper', () => {
+  let db: PGlite;
+  let fx: Fixture;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    fx = await seedUsers(db);
+  });
+
+  afterEach(async () => {
+    await db.close();
+  });
+
+  it('[M0-10] the recipient can read a landed flight\'s note with the reaper never run', async () => {
+    const flightId = await release(db, fx, { durationMs: 22 * HOUR });
+    await rewind(db, flightId, 23 * HOUR);
+
+    const rows = await asUser<{ body: string }>(db, fx.bob, `select body from message_bodies`);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.body).toMatch(/coffee/);
+  });
+
+  it('[M0-10] a doomed flight\'s note stays unreadable with the reaper never run', async () => {
+    const flightId = await release(db, fx, {
+      outcome: 'died',
+      durationMs: 22 * HOUR,
+      deathFraction: 0.5,
+    });
+    await rewind(db, flightId, 23 * HOUR);
+
+    expect(await asUser(db, fx.bob, `select * from message_bodies`)).toHaveLength(0);
+  });
+
+  it('[M0-10] the in-flight cases still hold with the reaper never run', async () => {
+    await release(db, fx, { durationMs: 22 * HOUR });
+    expect(await asUser(db, fx.bob, `select * from message_bodies`)).toHaveLength(0);
+  });
+
+  it('[M0-10] the recipient still cannot read it one second before landing, with the reaper never run', async () => {
+    const flightId = await release(db, fx, { durationMs: 22 * HOUR });
+    await rewind(db, flightId, 22 * HOUR - 1000);
+
+    expect(await asUser(db, fx.bob, `select * from message_bodies`)).toHaveLength(0);
+  });
+});
+
 describe('the reaper', () => {
   let db: PGlite;
   let fx: Fixture;

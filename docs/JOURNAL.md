@@ -295,3 +295,76 @@ knowledge survives a context reset.
     key is never actually absent in practice.
 - **Follow-ups filed:** none new. `M0-10` through `M0-13` remain exactly as
   filed in iteration 1; this item did not touch any of their files.
+
+---
+
+## Iteration 3 — 2026-08-21 — M0-10, visibility gated on `now()`, not the reaper
+
+- **Outcome:** done
+- **CI:** 43 `verify` runs on this branch, all completing in 2-4 seconds with
+  no runner assigned and a 404 on job logs — confirmed via `list_workflow_jobs`
+  on the latest run (`created_at`/`completed_at` two seconds apart). Q-003's
+  never-scheduled shape, not a real failure; not my item, carried on to §2.
+- **Verify:** typecheck ok · lint ok · 99 tests ok (95 → 99, floor raised) ·
+  flight-sim coverage 99.44% statements / 89.65% branches (unchanged — this
+  item touches only `supabase/`) · `gate:roadmap` ok (8 done, 14 pending) ·
+  `gate:tests` ok
+- **What landed:** `supabase/migrations/0007_visibility_ignores_reaper.sql`,
+  forward-only. `bodies_select_recipient` (`0003_rls.sql`) checked
+  `f.arrives_at <= now()` — correctly time-gated — but *also* checked
+  `f.status = 'arrived'` and `f.outcome = 'delivered'`, both of which stay at
+  their release-time defaults (`in_flight`/`pending`) until
+  `resolve_due_flights` runs. Confirmed the bug directly: a flight rewound
+  past `arrives_at` with the reaper never invoked was unreadable to its
+  recipient, exactly the "cron outage delays a message" failure ADR-002 exists
+  to prevent. The fix adds `flight_delivered_to_recipient(flight_id)`, a
+  `SECURITY DEFINER` helper shaped like `is_conversation_member` in
+  `0003_rls.sql`, that reads `flight_secrets.planned_outcome` directly — the
+  fate decided at release, never touched by the reaper — and redefines the
+  policy to gate on it plus `arrives_at`, dropping the status/outcome columns
+  from the check entirely. Four new `[M0-10]` tests in
+  `supabase/tests/rls/visibility.test.ts` cover landed/doomed/in-flight/
+  one-second-before, all without calling `resolve_due_flights`.
+- **Surprises for the next agent:**
+  - **A `SECURITY DEFINER` function that reads a locked-down vault table
+    (`flight_secrets`) must check the caller's identity itself, not rely on
+    the one RLS policy that happens to call it.** `/code-review --effort
+    high` caught this before it shipped: EXECUTE on a new function defaults
+    to `PUBLIC`, and the `authenticated` role needs that grant for the RLS
+    policy to even evaluate — so a first draft that only checked the flight
+    id would let any authenticated user learn a stranger's flight outcome by
+    UUID alone, `select public.flight_delivered_to_recipient('<uuid>')`
+    straight from a REST client. The fix folds
+    `f.recipient_id = (select auth.uid())` into the function itself, the same
+    shape `is_conversation_member` already uses. If you add another
+    `SECURITY DEFINER` helper over a RLS-locked table, give it the identity
+    check internally — never assume the caller only ever reaches it through
+    one intended policy.
+  - **`tsc -b`'s very first compile in a fresh container can emit stray
+    `.js`/`.d.ts` files next to `apps/mobile`'s TypeScript sources**, because
+    its `tsconfig.json` has no `outDir` (unlike `packages/flight-sim`, which
+    does, and outputs to a gitignored `dist/`). Those stray files are
+    untracked and not gitignored, so `eslint .` picks them up as plain JS and
+    fails on `no-undef` for `describe`/`it`/`expect`/`process`. It happened
+    once, on the very first `typecheck` after `pnpm install` in this
+    iteration's container, and did **not** reproduce on any run after —
+    deleting the strays and re-running `typecheck` left the tree clean every
+    time. Whatever triggers it is narrow (possibly the `unrs-resolver`
+    ignored-build-script warning `pnpm install` printed, or node_modules
+    settling mid-first-compile); it is not this item's bug to fix and not
+    reliably reproducible, but if `lint` ever fails on phantom `.js` files
+    under `apps/mobile`, `rm` them, re-run `typecheck` once, and check
+    `git status` before concluding something is actually broken. Filed as
+    `M0-14` since `apps/mobile/tsconfig.json` genuinely has no `outDir` and
+    that is worth closing regardless of whether the emit is reliably
+    triggered.
+  - **`security-review`'s git-diff assumption still doesn't fit this repo's
+    shape** (see iteration 2's note — no `origin/HEAD`, and `main` is only a
+    shared empty-commit ancestor). Reviewed the diff by hand again instead:
+    the new function uses only static, parameterized SQL, pins
+    `search_path = ''` with fully-qualified names, and — after the fix above —
+    cannot leak `flight_secrets` data to a non-recipient even called
+    directly. No findings.
+- **Follow-ups filed:** `M0-14` (give `apps/mobile/tsconfig.json` an
+  `outDir`, closing the stray-emit surface above regardless of trigger
+  reliability).
