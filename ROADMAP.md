@@ -269,7 +269,7 @@ item's predecessor), `supabase/tests/rls/visibility.test.ts`
 
 ### [ ] M0-11 — The loft snap: wrap the antimeridian, weight by latitude, fail loudly
 
-**Status:** todo · **Size:** M · **Depends on:** M0-05
+**Status:** in-progress · **Size:** M · **Depends on:** M0-05
 **Read first:** `docs/PRODUCT.md` §9, INV-7
 **Found by:** `/code-review --effort high`, iteration 2
 
