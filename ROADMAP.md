@@ -244,7 +244,7 @@ file exposed — see the journal).
 
 ### [ ] M0-10 — Message visibility must be gated on `now()`, not on the reaper
 
-**Status:** todo · **Size:** S · **Depends on:** M0-05
+**Status:** in-progress · **Size:** S · **Depends on:** M0-05
 **Read first:** `docs/DECISIONS.md` ADR-002
 **Found by:** `/code-review --effort high`, iteration 2
 
