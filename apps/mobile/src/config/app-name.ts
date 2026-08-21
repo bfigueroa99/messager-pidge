@@ -9,7 +9,3 @@ import identity from './app-name.json';
  * resolve at config-load time, while a `.json` one does.
  */
 export const APP_NAME: string = identity.name;
-
-export const APP_SLUG: string = identity.slug;
-
-export const BUNDLE_ID: string = identity.bundleId;

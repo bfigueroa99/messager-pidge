@@ -444,3 +444,79 @@ knowledge survives a context reset.
     `M1-03` is what will actually make it matter.
 - **Follow-ups filed:** none new. `M0-12` through `M0-14` remain exactly as
   filed in iteration 1; this item did not touch any of their files.
+
+---
+
+## Iteration 5 — 2026-08-21 — HARDENING, dead code
+
+- **Outcome:** done
+- **CI:** every run on this branch — 53 of them, latest on `203daf0` — completes
+  in 3-6 seconds with a single `ubuntu-latest` job whose `created_at` and
+  `completed_at` are the same few seconds apart. Confirmed via
+  `list_workflow_jobs` on the newest run before treating anything as red.
+  Q-003's never-scheduled shape, not a real failure; not this iteration's item.
+- **Selection:** `iteration` (5) − `last_hardening_iteration` (0) = 5 ≥ 5, so
+  `docs/LOOP.md` §2's override table puts HARDENING ahead of the topmost `todo`
+  (`M0-12`), which stays untouched for the next normal iteration.
+- **Verify:** typecheck ok · lint ok · 104 tests ok (unchanged — hardening
+  removed dead code, not tests) · flight-sim coverage 99.44% statements /
+  89.65% branches (unchanged) · `gate:roadmap` ok (10 done, 13 pending) ·
+  `gate:tests` ok · `pnpm --filter mobile exec expo export -p web` still
+  bundles and exports 3 static routes
+- **What landed:** ran `npx knip` (no prior config in the repo) and treated
+  every finding as a hypothesis to verify, not a command to obey — this
+  codebase has already been burned once by exactly this shape of tool
+  (`expo-font` is required for the web export despite no static import
+  anywhere; see iteration 2's journal note). For each flagged dependency I
+  checked whether any installed package declares it as a peer dependency,
+  then emptied `node_modules` and re-ran `pnpm install` + `pnpm run verify` +
+  `pnpm --filter mobile exec expo export -p web` with the candidate removed
+  before committing to the removal. Confirmed dead and removed:
+  `apps/mobile/package.json`'s `expo-status-bar`, `react-native-worklets`,
+  `@react-native/metro-config`, `react-test-renderer` (none required by any
+  peer dependency of an installed package, and both the full test suite and
+  the static web export succeed without them); `APP_SLUG` and `BUNDLE_ID` from
+  `apps/mobile/src/config/app-name.ts` (grepped the whole tree — nothing
+  outside that file referenced either; `app.config.ts` already reads
+  `slug`/`bundleId` straight off the JSON, not through this module, which is
+  the whole reason the module is split from the JSON in the first place); and
+  `SANTIAGO`/`REYKJAVIK` from `packages/flight-sim/src/__fixtures__/cities.ts`
+  (unused fixtures, not referenced by any test). Left three knip findings
+  unfixed because they are verified false positives, not dead code: `expo-font`
+  (documented necessity, iteration 2), an "unlisted dependency" on
+  `expo-updates` in `app.config.ts` that does not appear anywhere in that
+  file's actual text (a knip Expo-plugin heuristic with nothing behind it),
+  and an "unresolved import" of `apps/mobile/` from the root `jest.config.js`
+  (that string is Jest's own `projects` shorthand for "load this package's own
+  Jest config," not an import knip's static resolver understands).
+  `/code-review --effort high` ran over the diff afterward and found nothing.
+- **Surprises for the next agent:**
+  - **Treat every `knip` (or similar static-analysis) finding in
+    `apps/mobile` as a hypothesis, never a command.** This repo's Expo/Metro/
+    pnpm stack already has one documented case (`expo-font`) where a package
+    is required at runtime with zero static imports anywhere in the source
+    tree, purely because a *different* package (`@expo/router-server`) reaches
+    for it by path at bundle time. A tool that only reads imports cannot see
+    that relationship. The only trustworthy test is empirical: delete the
+    candidate, `rm -rf node_modules`, `pnpm install`, then run both
+    `pnpm run verify` and `pnpm --filter mobile exec expo export -p web` before
+    believing the removal is safe. Four dependencies passed that test this
+    iteration; `expo-font` would not have.
+  - **A stray `cd apps/mobile` in one Bash call persists across every later
+    call in the same session** (the tool's working directory is not reset per
+    command) and silently changes what a directory-relative tool like `knip`
+    treats as its project root — its second run from inside `apps/mobile`
+    reported different, wrong findings (`@pidge/flight-sim` and `expo-font`
+    as "unused" from the app's own `package.json`, which is nonsense) with no
+    error to signal the context had shifted. Always `pwd` after any `cd`
+    inside a multi-step investigation, or just avoid `cd` and prefix the one
+    command that needs a different directory with `cd x && `.
+  - **This container has no simulator and no device**, so "verify" for a
+    native dependency removal is necessarily bounded to what `verify` and the
+    web export can see. `react-native-worklets` in particular is the kind of
+    package that could matter only on-device (native gesture/animation
+    worklets) — checked for a peer-dependency requirement from every currently
+    installed package and found none, but flag this if an iOS/Android build
+    ever exists to test against and something animation-related breaks.
+- **Follow-ups filed:** none. This was pure removal within `M0-14`'s and
+  `M0-07`'s existing `Touches:` surface; no new roadmap item needed.
