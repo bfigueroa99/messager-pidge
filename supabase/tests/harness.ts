@@ -118,6 +118,12 @@ export interface ReleaseOptions {
   durationMs?: number;
   deathFraction?: number;
   body?: string;
+  /** Overrides fx.alice as the caller of release_pigeon. */
+  senderId?: string;
+  /** Overrides fx.bob as the flight's recipient. */
+  recipientId?: string;
+  /** A pigeon id to carry the flight. Omitted, the flight carries no bird. */
+  pigeonId?: string;
 }
 
 /** Release a bird from Alice to Bob via the real `release_pigeon` function. */
@@ -133,12 +139,12 @@ export async function release(
        $1,$2,$3,$4,
        $5,$6,$7,$8,
        $9,$10,$11,$12,$13,
-       $14::flight_outcome,$15,$16,$17,$18::death_cause
+       $14::flight_outcome,$15,$16,$17,$18::death_cause,$19
      ) as release_pigeon`,
     [
       fx.conversationId,
-      fx.alice,
-      fx.bob,
+      opts.senderId ?? fx.alice,
+      opts.recipientId ?? fx.bob,
       opts.body ?? 'the coffee here is bad and I think about you constantly',
       LAX.lat,
       LAX.lon,
@@ -154,9 +160,38 @@ export async function release(
       outcome === 'died' ? 39.51 : null,
       outcome === 'died' ? -97.16 : null,
       outcome === 'died' ? 'hawk' : null,
+      opts.pigeonId ?? null,
     ],
   );
   return rows[0]!.release_pigeon;
+}
+
+export interface AddPigeonOptions {
+  name?: string;
+  isAlive?: boolean;
+  inFlight?: boolean;
+  diedAt?: string;
+}
+
+/** Insert a pigeon directly, bypassing release_pigeon, to set up guard tests. */
+export async function addPigeon(
+  db: PGlite,
+  ownerId: string,
+  opts: AddPigeonOptions = {},
+): Promise<string> {
+  const { rows } = await db.query<{ id: string }>(
+    `insert into pigeons (owner_id, name, is_alive, in_flight, died_at)
+     values ($1, $2, $3, $4, $5)
+     returning id`,
+    [
+      ownerId,
+      opts.name ?? 'Wren',
+      opts.isAlive ?? true,
+      opts.inFlight ?? false,
+      opts.diedAt ?? null,
+    ],
+  );
+  return rows[0]!.id;
 }
 
 /** Drag a flight's timeline into the past so its moment has come. */

@@ -236,3 +236,62 @@ knowledge survives a context reset.
   `now()`, which is exactly what ADR-002 exists to prevent. The review verified
   both against the real migrations in PGlite. None of it is in this item's
   **Touches**, so none of it was fixed here.
+
+---
+
+## Iteration 2 — 2026-08-20 — M0-09, the release guards
+
+- **Outcome:** done
+- **Verify:** typecheck ok · lint ok · 95 tests ok (91 → 95, floor raised) ·
+  flight-sim coverage 99.44% statements / 89.65% branches · `gate:roadmap` ok
+  (7 done, 15 pending) · `gate:tests` ok
+- **CI:** every `verify` workflow run on this branch — 39 of them — completes
+  in 2-4 seconds with no runner assigned and a 404 on its logs. That is Q-003's
+  never-scheduled shape, not a real failure; confirmed again via
+  `list_workflow_jobs` on the latest run before treating anything as red. Not
+  my item; carried on to §2 as the protocol says.
+- **What landed:** `supabase/migrations/0006_release_guards.sql`, forward-only
+  and redefining both `release_pigeon` and `resolve_due_flights` in full.
+  `release_pigeon` now locks the pigeon row (`for update`) and rejects a
+  release when the bird isn't the sender's, is already `in_flight`, or is
+  dead — closing all three defects `M0-09` was filed against, plus the
+  concurrent-double-release race the naive version of the fix would still
+  have had. `resolve_due_flights`'s `birds` CTE now guards every field it
+  writes with `p.is_alive`/`coalesce(p.died_at, …)`/`coalesce(p.death_flight_id,
+  …)` — a pigeon already dead when a (now-impossible, but defended anyway)
+  flight resolves stays dead, keeps its original death record, and earns no
+  flight credit. The already-alive path is unchanged byte-for-byte.
+- **Surprises for the next agent:**
+  - **`0005` was already taken.** `M0-09`'s own `Touches:` line said
+    `supabase/migrations/0005_*.sql`, written before `0005_schedule.sql`
+    (the cron schedule) existed. Check `ls supabase/migrations/` before
+    trusting a roadmap item's filename guess; this one landed as `0006`.
+  - **A per-project `testTimeout` in `jest.config.js` is a silent no-op.**
+    `jest-circus` reads `testTimeout` off `globalConfig` only — a value set
+    inside one entry of the `projects` array (the `db` project had
+    `testTimeout: 60000`, added in bootstrap) is never read. It looked fine
+    for months because the `db` project only had one test file, so there was
+    never enough real parallel contention to blow past the *actual*,
+    unconfigured 5000 ms default. Adding this item's second `db` test file
+    was enough contention under full `pnpm run verify` (coverage + 4 projects
+    at once) to expose it: two of the four new tests failed on a hook
+    timeout, and it was not my new SQL. Moved to the config root; if a `db`
+    suite times out again, check that this hasn't drifted back into a
+    project entry.
+  - **`security-review`'s git-diff assumption doesn't fit this repo's shape.**
+    It shells out to `git diff origin/HEAD...`, which fails outright — there
+    is no `origin/HEAD` symbolic ref in a fresh checkout here — and even after
+    setting one to `origin/main`, `main` is still just the original empty
+    commit this branch merged once for a common ancestor, so the "diff" is
+    the entire branch's history, not this iteration's change. Don't spend an
+    iteration fighting that; review the actual diff by hand instead
+    (parameterized SQL only, no new dynamic queries, grants unchanged, guard
+    logic strictly tightens authorization) and say so in the journal, which is
+    what happened here — no findings.
+  - **`select * into v_pigeon from pigeons where id = ... for update; if not
+    found then ...`** is the idiomatic plpgsql pattern for "lock this row and
+    fail if it doesn't exist" — cleaner than testing the row variable for
+    `IS NULL` afterward, and it reads correctly even for a table whose primary
+    key is never actually absent in practice.
+- **Follow-ups filed:** none new. `M0-10` through `M0-13` remain exactly as
+  filed in iteration 1; this item did not touch any of their files.

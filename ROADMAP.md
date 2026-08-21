@@ -210,9 +210,9 @@ fall back to. Anything you add must support the New Architecture.
 
 ---
 
-### [ ] M0-09 — The release function refuses a bird that is not yours, not idle, or dead
+### [x] M0-09 — The release function refuses a bird that is not yours, not idle, or dead
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-05
+**Status:** done · **Size:** M · **Depends on:** M0-05
 **Found by:** `/code-review --effort high`, iteration 2 — see `docs/JOURNAL.md`
 
 **Why:** `release_pigeon` currently checks nothing about the bird. Confirmed
@@ -227,12 +227,18 @@ That is `PRODUCT.md` §8 "no resurrect", enforced by nothing.
 **Do NOT:** edit `0004_release_and_reaper.sql` — migrations are forward-only.
 
 **Acceptance criteria:**
-- [ ] a user cannot release a bird belonging to someone else
-- [ ] a bird already in the air cannot be released again
-- [ ] a dead bird cannot be released
-- [ ] delivering a flight never resurrects a bird that died on an earlier one
+- [x] a user cannot release a bird belonging to someone else
+- [x] a bird already in the air cannot be released again
+- [x] a dead bird cannot be released
+- [x] delivering a flight never resurrects a bird that died on an earlier one
 
-**Touches:** `supabase/migrations/0005_*.sql`, `supabase/tests/rls/*.test.ts`
+**Touches:** `supabase/migrations/0006_release_guards.sql`,
+`supabase/tests/rls/release-guards.test.ts`, `supabase/tests/harness.ts`
+(extended to let tests pass a pigeon id and sender/recipient overrides —
+needed to construct these scenarios at all; not in the original Touches list,
+noted here since 0005 turned out to already be taken by the reaper's cron
+schedule), `jest.config.js` (unrelated latent bug this item's second `db` test
+file exposed — see the journal).
 
 ---
 
