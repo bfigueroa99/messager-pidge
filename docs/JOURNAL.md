@@ -368,3 +368,79 @@ knowledge survives a context reset.
 - **Follow-ups filed:** `M0-14` (give `apps/mobile/tsconfig.json` an
   `outDir`, closing the stray-emit surface above regardless of trigger
   reliability).
+
+---
+
+## Iteration 4 — 2026-08-21 — M0-11, the loft snap
+
+- **Outcome:** done
+- **CI:** latest run on this branch (`aecb0a2`, run 47) has `conclusion:
+  "failure"` in the run summary, which looks different from prior iterations'
+  "never scheduled" runs — but `get_workflow_job` on it shows `runner_id: 0`,
+  empty `runner_name`, `started_at`/`completed_at` four seconds apart. Same
+  never-scheduled shape as Q-003, just surfacing a different `conclusion`
+  string this time. Not my item; carried on to §2.
+- **Verify:** typecheck ok · lint ok · 104 tests ok (99 → 104, floor raised) ·
+  flight-sim coverage 99.44% statements / 89.65% branches (unchanged — this
+  item touches only `supabase/`) · `gate:roadmap` ok (9 done, 14 pending) ·
+  `gate:tests` ok
+- **What landed:** `supabase/migrations/0008_loft_snap_fixes.sql`,
+  forward-only, redefining `snap_profile_location()` in full. Longitude is now
+  wrapped at the antimeridian (`least(abs(dlon), 360 - abs(dlon))`) and scaled
+  by `cos(radians(home_lat))` before comparison, closing the antimeridian and
+  latitude-weighting defects together — verified against real haversine
+  distances in the test comments, not just the raw-degree arithmetic.
+  Clearing `home_lat`/`home_lon` now explicitly nulls `city_id`/`city_label`
+  in the same early-return branch instead of leaving them stale. A city
+  lookup that returns no row now raises (`no city found to snap to`) instead
+  of silently writing null coordinates. The function is pinned to
+  `search_path = ''` with a fully-qualified `public.cities`, matching the
+  pattern `is_conversation_member` and `flight_delivered_to_recipient`
+  already use. Five new `[M0-11]` tests in
+  `supabase/tests/rls/loft-snap.test.ts` cover all five acceptance criteria;
+  confirmed each one fails against the pre-fix function (temporarily moved
+  the migration aside and re-ran) before confirming it passes against the fix.
+- **Surprises for the next agent:**
+  - **`get_workflow_job`'s `conclusion` field is not a reliable signal on its
+    own for "did this actually run."** This run said `"failure"` where every
+    prior never-scheduled run in this branch's history said something else
+    (the journal doesn't record which, but iterations 2 and 3 both treated it
+    as distinguishable at a glance). `runner_id: 0` plus an empty
+    `runner_name` plus a multi-second `created_at`→`completed_at` gap is the
+    actual signal, regardless of what `conclusion` says. Don't trust
+    `conclusion` alone to mean the job body ran.
+  - **A planar `(dlat)^2 + (dlon·cos(lat))^2` approximation, not full
+    haversine, is enough to fix both the antimeridian and latitude bugs at
+    once**, and it is what the item's own title ("wrap the antimeridian,
+    weight by latitude") implies rather than a request for great-circle math.
+    Verified both new fixtures against a real haversine calculation before
+    writing the tests, so the expected winners are ground-truth correct, not
+    just self-consistent with the approximation.
+  - **`security-review`'s git-diff assumption still doesn't fit this repo's
+    shape** (third iteration in a row to hit this — see iterations 2 and 3).
+    Reviewed `git diff aecb0a2..HEAD -- supabase/migrations/0008_*.sql` by
+    hand instead: static/parameterized SQL only, no dynamic queries, no grant
+    changes, the raised exception is a static string with no interpolation.
+    No findings. If this keeps recurring, it may be worth its own roadmap
+    item rather than a fresh journal note every time — noted but not filed,
+    since it's tooling-config, not product code, and outside every item's
+    `Touches:` so far.
+  - **This session's worker process restarted mid-run**, once, while a
+    background `pnpm run verify` was in flight. The untracked migration and
+    test file survived on disk across the restart (this container's
+    filesystem, unlike its context, is not wiped), so nothing was lost — but
+    it is a reminder that `docs/LOOP.md`'s "push early and push often" advice
+    is not just about permission-classifier denials. Committed and pushed the
+    implementation before `verify` had even finished as a result, then
+    verified after the fact. Worth keeping as the default order when a
+    background command is running.
+  - **`/code-review --effort high` found one deferred, non-correctness
+    finding**: `cos(radians(new.home_lat))` is recomputed per candidate city
+    row inside the `order by` even though it is constant for the whole
+    trigger invocation. Harmless while `cities` is empty (`M1-03` hasn't
+    seeded it yet), but worth revisiting once that item lands tens of
+    thousands of rows — a `with home as (...)` CTE would hoist it out.
+    Deferring rather than fixing now since it is not a correctness bug and
+    `M1-03` is what will actually make it matter.
+- **Follow-ups filed:** none new. `M0-12` through `M0-14` remain exactly as
+  filed in iteration 1; this item did not touch any of their files.

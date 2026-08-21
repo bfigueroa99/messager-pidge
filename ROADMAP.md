@@ -267,9 +267,9 @@ item's predecessor), `supabase/tests/rls/visibility.test.ts`
 
 ---
 
-### [ ] M0-11 — The loft snap: wrap the antimeridian, weight by latitude, fail loudly
+### [x] M0-11 — The loft snap: wrap the antimeridian, weight by latitude, fail loudly
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-05
+**Status:** done · **Size:** M · **Depends on:** M0-05
 **Read first:** `docs/PRODUCT.md` §9, INV-7
 **Found by:** `/code-review --effort high`, iteration 2
 
@@ -283,13 +283,15 @@ location still shows correspondents your city. `select … into` with no
 unreadable. And it is the only function here without a pinned `search_path`.
 
 **Acceptance criteria:**
-- [ ] a point just west of the antimeridian snaps to the city just east of it
-- [ ] a high-latitude point snaps to the nearest city by ground distance
-- [ ] clearing the loft clears the city label with it
-- [ ] the trigger raises rather than nulling a coordinate when no city matches
-- [ ] the function runs with a pinned search_path
+- [x] a point just west of the antimeridian snaps to the city just east of it
+- [x] a high-latitude point snaps to the nearest city by ground distance
+- [x] clearing the loft clears the city label with it
+- [x] the trigger raises rather than nulling a coordinate when no city matches
+- [x] the function runs with a pinned search_path
 
-**Touches:** `supabase/migrations/0005_*.sql`, `supabase/tests/rls/*.test.ts`
+**Touches:** `supabase/migrations/0008_loft_snap_fixes.sql` (the `Touches:`
+line's own `0005_*.sql` guess was stale — `0005` was already taken by the
+cron schedule; see `M0-09`'s note), `supabase/tests/rls/loft-snap.test.ts`
 
 ---
 
