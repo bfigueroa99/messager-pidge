@@ -79,18 +79,42 @@ export function densify(a: LatLng, b: LatLng, steps: number): LatLng[] {
  * straight back across the entire map, because the longitude jumps from +179
  * to -179 and the renderer joins them. This is the single most common bug in
  * great-circle map code, and it is guaranteed to be hit by real users.
+ *
+ * A crossing inserts a synthetic point at the seam (lon = +-180) on both
+ * sides, linearly interpolated between the two samples that straddle it, so
+ * every resulting segment still has at least two points and is drawable —
+ * including the very first segment, when the crossing falls on the first
+ * sample and the origin itself would otherwise be a lone, dropped point.
  */
 export function splitAtAntimeridian(points: readonly LatLng[]): LatLng[][] {
   if (points.length === 0) return [];
-  const segments: LatLng[][] = [[]];
-  let prev: LatLng | null = null;
+  const segments: LatLng[][] = [[points[0]!]];
 
-  for (const p of points) {
-    if (prev !== null && Math.abs(p.lon - prev.lon) > 180) segments.push([]);
-    const current = segments[segments.length - 1];
-    if (current) current.push(p);
-    prev = p;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1]!;
+    const curr = points[i]!;
+    const jump = curr.lon - prev.lon;
+
+    if (Math.abs(jump) > 180) {
+      const sign = Math.sign(jump);
+      const boundaryLon = -sign * 180;
+      const unwrappedCurrLon = curr.lon - sign * 360;
+      const denom = unwrappedCurrLon - prev.lon;
+      // denom is ~0 when prev and curr already sit on opposite sides of the
+      // exact seam (e.g. lon 180 followed by lon -180) — there is no real
+      // longitude gap left to interpolate across, so fall back to prev's own
+      // latitude rather than dividing by zero.
+      const t = Math.abs(denom) > 1e-9 ? (boundaryLon - prev.lon) / denom : 0;
+      const boundaryLat = prev.lat + t * (curr.lat - prev.lat);
+
+      segments[segments.length - 1]!.push({ lat: boundaryLat, lon: boundaryLon });
+      segments.push([{ lat: boundaryLat, lon: -boundaryLon }]);
+    }
+
+    segments[segments.length - 1]!.push(curr);
   }
+  // Every segment built above already has >= 2 points; this only still
+  // matters for the single-point-input case (points.length === 1).
   return segments.filter((s) => s.length > 1);
 }
 

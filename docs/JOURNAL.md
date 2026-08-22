@@ -520,3 +520,75 @@ knowledge survives a context reset.
     ever exists to test against and something animation-related breaks.
 - **Follow-ups filed:** none. This was pure removal within `M0-14`'s and
   `M0-07`'s existing `Touches:` surface; no new roadmap item needed.
+
+---
+
+## Iteration 6 — 2026-08-22 — M0-12
+
+- **Outcome:** done
+- **CI:** the newest runs on this branch (run 55/56/57, `sha 12617be`) all
+  complete in 2-6 seconds on a single `ubuntu-latest` job — confirmed via
+  `list_workflow_jobs` that `created_at`→`completed_at` is a 2-second gap, the
+  same never-scheduled shape Q-003 already documents. Not this iteration's
+  item; carried straight to §2.
+- **Selection:** `iteration` (6) − `last_hardening_iteration` (5) = 1 < 5, and
+  `iteration` (6) − `last_audit_iteration` (0) = 6 < 10, so neither override
+  applies. Topmost `todo` with satisfied dependencies is `M0-12` (depends on
+  `M0-02`, done). Size `S`.
+- **Verify:** typecheck ok · lint ok · 108 tests ok (104 → 108, floor raised) ·
+  flight-sim coverage 99.48% statements / 91.07% branches · `gate:roadmap` ok
+  (11 done, 12 pending) · `gate:tests` ok
+- **What landed:** `splitAtAntimeridian` used to discard any segment with only
+  one point, which silently dropped the origin whenever the very first
+  densified sample already crossed ±180 (a route whose origin sits within one
+  sample-step of the seam). The acceptance criteria required both "keeps the
+  origin" and "every segment has >= 2 points" simultaneously, which rules out
+  just relaxing the filter — a lone-point origin segment can't satisfy the
+  second criterion on its own. Fixed by inserting an interpolated boundary
+  point at the exact seam (lon = ±180) on both sides of a crossing, linearly
+  interpolating latitude between the two straddling samples: this gives the
+  origin's segment a genuine second point (the boundary) instead of leaving it
+  alone, keeps every segment's internal longitude jump ≤ 180° (so the existing
+  `M0-02` invariant test still holds), and keeps the sum-of-segments distance
+  within tolerance since the inserted point sits on the already-densely-sampled
+  path. Three new `[M0-12]` tests cover the three acceptance criteria directly,
+  using a fixture (`lat: -18.2, lon: 179.9` → `lat: -17.7, lon: -177.0`) whose
+  very first `densify` sample crosses the seam — confirmed this fixture
+  reproduced the origin-drop against the pre-fix code before writing the fix.
+  `/code-review --effort high` caught a real bug in the first draft: when two
+  adjacent samples already sit on exactly opposite sides of the seam (e.g. lon
+  180 followed by lon -180 — reachable because `interpolate()`'s `atan2` can
+  legitimately emit exactly ±180), the boundary-interpolation fraction divides
+  by a denominator of 0 and produces `NaN`, which then gets written silently
+  into both split segments — reproduced directly with a standalone repro
+  before fixing. Fixed with an epsilon-guarded fallback (denominator ~0 → use
+  `prev`'s own latitude, since there's no real longitude gap left to
+  interpolate across) and added a fourth `[M0-12]` regression test for exactly
+  that input. The review's second finding — the trailing
+  `segments.filter((s) => s.length > 1)` is now dead weight for every
+  multi-point input, since the new loop already guarantees >= 2 points per
+  segment and the filter only still matters for the degenerate
+  `points.length === 1` case — was a style note, not a correctness bug;
+  addressed with a one-line comment rather than deferred, since it was
+  low-risk and already in hand.
+- **Surprises for the next agent:**
+  - **A criterion pair like "keep X" + "every segment has >= N points" can
+    rule out the obvious fix (just relax a filter) and force a structurally
+    different one** (inserting a synthetic boundary point) — read both
+    criteria together before picking an approach, not one at a time.
+  - **`interpolate()`'s `atan2`-based output can legitimately land exactly on
+    ±180**, which is an input `splitAtAntimeridian` (a public, boundary-facing
+    function) must not choke on even though it's astronomically unlikely along
+    a real great-circle sample sequence — adversarial/synthetic point arrays
+    can hit it directly, and code review found it precisely by trying that
+    input rather than only auditing the "normal" path.
+  - **The M0-02 "leaves no segment containing a longitude jump over 180
+    degrees" test doubles as a correctness net for any future change to
+    `splitAtAntimeridian`** — the boundary-point insertion here had to keep
+    every intra-segment jump ≤ 180° exactly, or that pre-existing test would
+    have caught the regression immediately. Worth deliberately re-running
+    tests named for an *earlier* item after touching a function they cover,
+    not just the tests for the item you're working on.
+- **Follow-ups filed:** none. This landed entirely within `M0-12`'s own
+  `Touches:` (`packages/flight-sim/src/geo.ts`, `geo.test.ts`); no drift into
+  other files.

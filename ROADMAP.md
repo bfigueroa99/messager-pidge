@@ -295,9 +295,9 @@ cron schedule; see `M0-09`'s note), `supabase/tests/rls/loft-snap.test.ts`
 
 ---
 
-### [ ] M0-12 — `arcSegments` must not drop the origin at the antimeridian
+### [x] M0-12 — `arcSegments` must not drop the origin at the antimeridian
 
-**Status:** in-progress · **Size:** S · **Depends on:** M0-02
+**Status:** done · **Size:** S · **Depends on:** M0-02
 **Found by:** `/code-review --effort high`, iteration 2
 
 **Why:** `splitAtAntimeridian` discards single-point segments. When the very
@@ -306,9 +306,9 @@ starts 135 km from the loft it left. INV-6 says the chart shows the bird's true
 position; that includes where it took off.
 
 **Acceptance criteria:**
-- [ ] a route starting just west of the antimeridian keeps its origin vertex
-- [ ] every segment of a split route still contains at least two points
-- [ ] the sum-of-segments property still holds across the seam
+- [x] a route starting just west of the antimeridian keeps its origin vertex
+- [x] every segment of a split route still contains at least two points
+- [x] the sum-of-segments property still holds across the seam
 
 **Touches:** `packages/flight-sim/src/geo.ts`, `geo.test.ts`
 

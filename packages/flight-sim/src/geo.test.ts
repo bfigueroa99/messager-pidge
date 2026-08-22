@@ -114,4 +114,49 @@ describe('splitAtAntimeridian', () => {
   it('[M0-02] returns nothing for an empty path', () => {
     expect(splitAtAntimeridian([])).toEqual([]);
   });
+
+  it('[M0-12] a route starting just west of the antimeridian keeps its origin vertex', () => {
+    const origin = { lat: -18.2, lon: 179.9 };
+    const destination = { lat: -17.7, lon: -177.0 };
+    const segments = arcSegments(origin, destination, 8);
+    expect(segments[0]![0]!.lat).toBeCloseTo(origin.lat, 9);
+    expect(segments[0]![0]!.lon).toBeCloseTo(origin.lon, 9);
+  });
+
+  it('[M0-12] every segment of a split route still contains at least two points', () => {
+    for (const seg of arcSegments(TOKYO, LAX)) {
+      expect(seg.length).toBeGreaterThanOrEqual(2);
+    }
+    const origin = { lat: -18.2, lon: 179.9 };
+    const destination = { lat: -17.7, lon: -177.0 };
+    for (const seg of arcSegments(origin, destination, 8)) {
+      expect(seg.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('[M0-12] the sum-of-segments property still holds across the seam', () => {
+    const origin = { lat: -18.2, lon: 179.9 };
+    const destination = { lat: -17.7, lon: -177.0 };
+    const direct = haversineKm(origin, destination);
+    const segments = arcSegments(origin, destination, 8);
+    let sum = 0;
+    for (const seg of segments) {
+      for (let i = 1; i < seg.length; i++) sum += haversineKm(seg[i - 1]!, seg[i]!);
+    }
+    expect(Math.abs(sum - direct) / direct).toBeLessThan(0.005);
+  });
+
+  it('[M0-12] never produces NaN when two samples already sit on opposite sides of the exact seam', () => {
+    const segments = splitAtAntimeridian([
+      { lat: 10, lon: 180 },
+      { lat: 20, lon: -180 },
+      { lat: 30, lon: -170 },
+    ]);
+    for (const seg of segments) {
+      for (const p of seg) {
+        expect(Number.isFinite(p.lat)).toBe(true);
+        expect(Number.isFinite(p.lon)).toBe(true);
+      }
+    }
+  });
 });
