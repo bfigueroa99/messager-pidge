@@ -297,7 +297,7 @@ cron schedule; see `M0-09`'s note), `supabase/tests/rls/loft-snap.test.ts`
 
 ### [ ] M0-12 — `arcSegments` must not drop the origin at the antimeridian
 
-**Status:** todo · **Size:** S · **Depends on:** M0-02
+**Status:** in-progress · **Size:** S · **Depends on:** M0-02
 **Found by:** `/code-review --effort high`, iteration 2
 
 **Why:** `splitAtAntimeridian` discards single-point segments. When the very
