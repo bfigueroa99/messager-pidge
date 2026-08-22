@@ -15,7 +15,9 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Overridable so tests can point the gate at a throwaway fixture tree instead
+// of the real repository.
+const ROOT = process.env.ROADMAP_GATE_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..');
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', '.expo']);
 
 function walk(dir, out = []) {
@@ -28,8 +30,23 @@ function walk(dir, out = []) {
   return out;
 }
 
+// Only text inside an it()/test() name literal counts as evidence — a comment
+// or a describe() block merely mentioning an ID must not satisfy the gate.
+// Anchored to the start of a (trimmed) line, like gate:tests' own test-count
+// regex, so `emailRegex.test('[M2-01] ...')` is not mistaken for a Jest test
+// declaration just because the method is also named `test`.
+const TEST_NAME_RE = /^[ \t]*(?:it|test)\s*\(\s*(['"`])((?:\\.|(?!\1).)*?)\1/gm;
+
+function testNames(src) {
+  const names = [];
+  let m;
+  TEST_NAME_RE.lastIndex = 0;
+  while ((m = TEST_NAME_RE.exec(src)) !== null) names.push(m[2]);
+  return names;
+}
+
 const testSources = walk(ROOT).map((f) => readFileSync(f, 'utf8'));
-const allTestText = testSources.join('\n');
+const allTestNames = testSources.flatMap(testNames).join('\n');
 
 const roadmap = readFileSync(join(ROOT, 'ROADMAP.md'), 'utf8');
 
@@ -66,7 +83,7 @@ while ((match = itemRe.exec(roadmap)) !== null) {
   }
 
   const tag = `[${id}]`;
-  const testCount = allTestText.split(tag).length - 1;
+  const testCount = allTestNames.split(tag).length - 1;
   if (testCount === 0) {
     errors.push(
       `${id} "${title}" is marked done but no test name contains ${tag}. ` +

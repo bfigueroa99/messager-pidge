@@ -592,3 +592,81 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. This landed entirely within `M0-12`'s own
   `Touches:` (`packages/flight-sim/src/geo.ts`, `geo.test.ts`); no drift into
   other files.
+
+---
+
+## Iteration 7 — 2026-08-22 — M0-13
+
+- **Outcome:** done
+- **CI:** the newest run on this branch (run 61, `sha 21044de`) completed in 3
+  seconds on a single `ubuntu-latest` job — confirmed via `list_workflow_jobs`
+  that `created_at`→`completed_at` is a 3-second gap with no real step output,
+  the same never-scheduled shape Q-003 already documents. Not this iteration's
+  item; carried straight to §2.
+- **Selection:** `iteration` (7) − `last_hardening_iteration` (5) = 2 < 5, and
+  `iteration` (7) − `last_audit_iteration` (0) = 7 < 10, so neither override
+  applies. Topmost `todo` with satisfied dependencies is `M0-13` (depends on
+  `M0-06`, done). Size `S`.
+- **Verify:** typecheck ok · lint ok · 112 tests ok (108 → 112, floor raised
+  twice — 111 after the first fix, 112 after the code-review follow-up) ·
+  flight-sim coverage 99.48% statements / 91.07% branches (unchanged) ·
+  `gate:roadmap` ok (11 done, 12 pending) · `gate:tests` ok
+- **What landed:** `check-roadmap-tests.mjs` used to count `[ID]` as a raw
+  substring anywhere in a test file's text, so a comment mentioning an item
+  satisfied "no checkbox without a test" — confirmed directly by writing a
+  fixture where the only mention of the tag was a comment and observing the
+  pre-fix gate accept it. Replaced the whole-file substring scan with a regex
+  that extracts only the string literal passed to a genuine `it(`/`test(` call
+  and searches inside those extracted names instead of the raw source. Three
+  new `[M0-13]` tests cover the three acceptance criteria directly, each
+  spawning the real gate script (`node scripts/check-roadmap-tests.mjs`) as a
+  subprocess against a throwaway fixture tree via a new `ROADMAP_GATE_ROOT`
+  env override — chosen over unit-testing an extracted function because the
+  script's module system is plain ESM (`.mjs`, no `type: module` in
+  `package.json`) while every test file compiles through `ts-jest` targeting
+  CommonJS, so a `require()`-based import would not reliably load it.
+  Confirmed the comment-only fixture test fails against the pre-fix script
+  (stashed the fix, re-ran, watched it fail with the exact assertion error)
+  before trusting it as a real regression test, not a self-consistent one.
+  `/code-review --effort high` found the first draft's extraction regex
+  (`\b(?:it|test)\s*\(`) would also match the string argument of an unrelated
+  `.test()` call — e.g. `emailRegex.test('[M2-01] not-an-email')` inside a
+  correctly-named `it(...)` — because a word boundary sits on both sides of
+  `test` in `.test(` too. That is the exact failure mode this item exists to
+  close, just reached through a different vector than a comment, so it was a
+  correctness bug worth fixing rather than deferring: anchored the regex to
+  the start of a (trimmed) line, matching the convention `gate:tests`' own
+  test-count regex already uses, which naturally excludes any `.method(` call
+  since the line's first non-whitespace character is `.`, not the method
+  name. Added a fourth `[M0-13]` regression test for exactly that input.
+  Confirmed on the real repository tree (no `ROADMAP_GATE_ROOT` override) that
+  the gate still reports `gate:roadmap ok` after both changes.
+- **Surprises for the next agent:**
+  - **This repo's `.mjs` scripts and its `.test.ts` files live in
+    incompatible module worlds** — the scripts are plain ESM with no
+    transpilation, the tests compile through `ts-jest` with `module:
+    CommonJS` — so testing a script's behavior means spawning it as a real
+    subprocess against a fixture tree, not importing its internals. Added a
+    single `ROADMAP_GATE_ROOT` env-var override to `check-roadmap-tests.mjs`
+    for exactly this purpose; the same pattern would work for
+    `check-test-count.mjs` if it ever needs direct tests.
+  - **The line-start anchoring fix has the same known gap as
+    `check-test-count.mjs`'s own test-count regex**: neither matches
+    `fit(`, `xit(`, `it.each(`, or `test.each(`. `gate:tests` bans `it.skip`/
+    `it.only`/`xit`/`xdescribe` outright, which covers most of that gap, but
+    `it.each`/`test.each` (parameterized tests) are legal and currently
+    unused anywhere in this repo — grepped to confirm. Left unfixed as
+    out-of-scope for a Size-S item with nothing in the codebase yet exercising
+    it; worth a fresh roadmap item if a future item actually reaches for
+    `it.each`.
+  - **A subprocess that intentionally exits non-zero inside a Jest test
+    prints its own `console.error` output directly into the surrounding
+    `pnpm run verify` log**, interleaved with unrelated suites' `PASS` lines,
+    even though `execFileSync` captures its stdout/stderr into the returned/
+    thrown value. Harmless — the assertions still pass on the captured
+    string — but it looks alarming in a raw log scroll if you are not
+    expecting it; do not mistake it for a real `gate:roadmap` failure in
+    `verify`'s own final line.
+- **Follow-ups filed:** none new. This landed entirely within the item's own
+  `Touches:` (`scripts/check-roadmap-tests.mjs`,
+  `tests/check-roadmap-tests.test.ts`); no drift into other files.

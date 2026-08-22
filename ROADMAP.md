@@ -314,9 +314,9 @@ position; that includes where it took off.
 
 ---
 
-### [ ] M0-13 — The roadmap gate must count test names, not any mention
+### [x] M0-13 — The roadmap gate must count test names, not any mention
 
-**Status:** in-progress · **Size:** S · **Depends on:** M0-06
+**Status:** done · **Size:** S · **Depends on:** M0-06
 **Found by:** `/code-review --effort high`, iteration 2
 
 **Why:** `check-roadmap-tests.mjs` counts `[ID]` anywhere in a test file's text,
@@ -325,11 +325,11 @@ is the loop's honesty mechanism; a gate that can be satisfied by a comment is
 worse than none, because it reads as evidence.
 
 **Acceptance criteria:**
-- [ ] an ID appearing only in a comment does not count as evidence
-- [ ] an ID inside an `it()` or `test()` name does count
-- [ ] the gate still passes on the repository as it stands
+- [x] an ID appearing only in a comment does not count as evidence
+- [x] an ID inside an `it()` or `test()` name does count
+- [x] the gate still passes on the repository as it stands
 
-**Touches:** `scripts/check-roadmap-tests.mjs`, `tests/*.test.ts`
+**Touches:** `scripts/check-roadmap-tests.mjs`, `tests/check-roadmap-tests.test.ts`
 
 ---
 
