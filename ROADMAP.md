@@ -316,7 +316,7 @@ position; that includes where it took off.
 
 ### [ ] M0-13 — The roadmap gate must count test names, not any mention
 
-**Status:** todo · **Size:** S · **Depends on:** M0-06
+**Status:** in-progress · **Size:** S · **Depends on:** M0-06
 **Found by:** `/code-review --effort high`, iteration 2
 
 **Why:** `check-roadmap-tests.mjs` counts `[ID]` anywhere in a test file's text,
