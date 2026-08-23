@@ -740,3 +740,99 @@ knowledge survives a context reset.
   `tests/mobile-tsconfig-outdir.test.ts` was added and the `Touches:` line
   updated to match, the same way `M0-13` and earlier items list their own test
   file.
+
+---
+
+## Iteration 9 — 2026-08-23 — M0-08
+
+- **Outcome:** done
+- **CI:** run 69 on `5b65ac4` (this branch's tip at claim time) completed in
+  4 seconds with `runner_id: 0`, an empty `runner_name`, and a 404 on
+  `get_job_logs` — the same never-scheduled shape Q-003 already documents, not
+  a real failure. Not this iteration's item; carried straight to §2.
+- **Selection:** `iteration` (9) − `last_hardening_iteration` (5) = 4 < 5, and
+  `iteration` (9) − `last_audit_iteration` (0) = 9 < 10, so neither override
+  applies. Topmost `todo` with satisfied dependencies is `M0-08` (depends on
+  `M0-07`, done). Size `M`.
+- **Verify:** typecheck ok · lint ok · 119 tests ok (115 → 119) · flight-sim
+  coverage 99.48% statements / 91.07% branches (unchanged) · `gate:roadmap` ok
+  (14 done, 9 pending) · `gate:tests` ok
+- **What landed:** `pnpm run shot -- <story>` (`scripts/shot.mjs`), which boots
+  the Expo web dev server, drives a headless Chromium (`playwright`, new
+  devDependency, ADR-009) to `/_dev/<story>?t=<epoch_ms>`, waits for
+  `data-testid="ready"`, and writes `artifacts/shots/<story>.png`. The one
+  story so far (`index`, in `apps/mobile/app/_dev/[story].tsx`) just proves the
+  mechanism — it renders the same app name the real index route does. Four new
+  `[M0-08]` tests cover the acceptance criteria directly by shelling out to the
+  real CLI commands, the same shape M0-07's `web-export.test.ts` already used.
+  `expo export -p web` turned out to bundle `_dev` into the production output
+  even with no `generateStaticParams` on it (confirmed directly: an
+  unmodified export produced `dist/_dev/[story].html`), so
+  `apps/mobile/scripts/export-web.mjs` now wraps the real command, physically
+  moving `app/_dev` out of `app/` for the span of the export and back
+  afterwards in a `finally`; `export:web` calls it instead of the raw command
+  now, and `M0-07`'s `Verify with` line was updated so a future manual
+  re-verify doesn't bypass it. `/code-review --effort high` (three rounds)
+  found real bugs, not style nits: `@react-native/dev-middleware` refuses to
+  launch its debugger tooling under `NODE_ENV=test` unless mocked, which
+  crashed the dev server the instant this ran inside Jest (fixed by forcing
+  `NODE_ENV=development` on the spawned child only); `pnpm run shot -- index`
+  forwards the literal `--` token to the script instead of stripping it the
+  way `npm run` does (confirmed side by side against both package managers
+  with an identical script) — `shot.mjs`'s arg parsing now filters it out;
+  and, most substantially, a live Metro dev server and a full production
+  `expo export` genuinely starve each other for CPU when Jest schedules both
+  test files' heavy work at the same moment — forcing `shot.test.ts` and
+  `web-export.test.ts` onto two workers reproduced a `[data-testid="ready"]`
+  timeout on every attempt, three times running, until both scripts were made
+  to share one cross-process `mkdir`-based lock (`scripts/lib/file-lock.mjs`).
+  Later rounds also caught: an uncaught `spawn` error crashing the whole
+  process instead of surfacing through the diagnostic error path; a typo'd
+  story name silently "succeeding" by matching `testID="ready"` on its own
+  unknown-story fallback UI (now a distinct `testID="story-not-found"` that
+  `shot.mjs` races against, so a bad name fails fast with a clear message
+  instead of a slow, misleading pass or a 60-second timeout); a crash-recovery
+  gap where a hard-killed run could leave both the real `app/_dev` and a
+  stale parked copy on disk, which would throw `ENOTEMPTY` on the next run's
+  rename; and a missing explicit timeout on `page.goto` (Playwright's 30s
+  default doesn't budget for Metro compiling the route's bundle on that exact
+  request, which is the real work being waited on).
+- **Surprises for the next agent:**
+  - **A live Metro dev server and a full `expo export -p web` will starve
+    each other for CPU if Jest ever runs them at the same moment**, and Jest's
+    default scheduling does not prevent that — it happened to avoid it in the
+    full 13-suite `pnpm run verify` run but reproduced on every attempt when
+    only these two heavy test files ran together (fewer other suites to
+    interleave the scheduling). `scripts/lib/file-lock.mjs`'s cross-process
+    lock is the fix; any future script that boots Metro (dev server or
+    export) in a test should acquire the same lock (`metroCpuLockPath`)
+    rather than trusting scheduling luck.
+  - **pnpm does not strip a `--` argument separator the way npm does.**
+    `pnpm run <script> -- <args>` forwards the literal `--` through to the
+    underlying command as an extra argv entry; `npm run <script> -- <args>`
+    does not. Confirmed side by side with an identical trivial script. Any
+    future script invoked as `pnpm run x -- y` needs to filter stray `--`
+    tokens out of its own argv, the way `shot.mjs` now does.
+  - **`@react-native/dev-middleware` hard-refuses its debugger-launch paths
+    under `NODE_ENV=test`** ("must be mocked or overridden in tests"),
+    unconditionally, with no way to opt out from the caller's side except not
+    being `NODE_ENV=test` — which a script spawned from inside a Jest test
+    inherits by default. Any future dev-server-booting script spawned from a
+    test needs to force `NODE_ENV` to something else on the child.
+  - **`output: 'static'` (app.config.ts, set since `M0-07`) does not exclude a
+    dynamic route from `expo export` just because it has no
+    `generateStaticParams`** — it still gets a page in `dist/`. Whatever ends
+    up being this repo's next dev-only or internal-only route will hit the
+    same leak `_dev` did; reach for `export-web.mjs`'s park/restore pattern
+    (or generalize it) rather than assuming the framework excludes it.
+  - **Deferred, not fixed:** `withFileLock`'s poll loop
+    (`scripts/lib/file-lock.mjs`) and `waitForServer`'s poll loop
+    (`scripts/shot.mjs`) duplicate the same deadline/sleep/retry shape with no
+    shared helper — `/code-review` flagged this as a style/maintenance nit
+    (a future timeout-semantics fix would need to touch both), not a
+    correctness bug, so it was left as is rather than adding an abstraction
+    for two call sites with slightly different failure semantics.
+- **Follow-ups filed:** none new. Everything above landed inside this item's
+  own intent; see the updated `Touches:` list on `M0-08` itself for the full
+  file set, which grew well past its original guess (as most items' does) once
+  the export leak and the concurrency race were discovered mid-implementation.

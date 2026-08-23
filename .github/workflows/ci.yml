@@ -29,6 +29,24 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Playwright's own browser download is the one part of this workflow
+      # `cache: pnpm` above does not cover. Keyed on the exact pinned version
+      # (package.json's devDependencies.playwright) rather than the whole
+      # lockfile, so an unrelated dependency bump doesn't also pay for a
+      # fresh ~150MB Chromium download — bump this key when that version does.
+      - name: cache playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-1.62.1
+
+      # M0-08's shot script and its own test drive a real headless Chromium.
+      # `playwright install` never prompts — it is a plain download — so this
+      # needs nothing beyond running non-interactively, which every CI shell
+      # already is.
+      - name: install chromium for playwright
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: typecheck
         run: pnpm run typecheck
 

@@ -14,6 +14,7 @@
     "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "gate:roadmap": "node scripts/check-roadmap-tests.mjs",
     "gate:tests": "node scripts/check-test-count.mjs",
+    "shot": "node scripts/shot.mjs",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run test:cov && pnpm run gate:roadmap && pnpm run gate:tests"
   },
   "devDependencies": {
@@ -23,6 +24,7 @@
     "@types/node": "22.19.1",
     "eslint": "9.39.0",
     "jest": "30.2.0",
+    "playwright": "1.62.1",
     "ts-jest": "29.4.6",
     "typescript": "5.9.3",
     "typescript-eslint": "8.46.4"

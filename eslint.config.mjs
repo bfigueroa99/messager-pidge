@@ -90,7 +90,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['**/*.test.ts', 'scripts/**/*.mjs', 'supabase/tests/**/*.ts', 'tests/**/*.ts'],
+    files: ['**/*.test.ts', '**/scripts/**/*.mjs', 'supabase/tests/**/*.ts', 'tests/**/*.ts'],
     languageOptions: {
       globals: {
         console: 'readonly',
@@ -98,6 +98,8 @@ export default tseslint.config(
         __dirname: 'readonly',
         module: 'writable',
         require: 'readonly',
+        fetch: 'readonly',
+        setTimeout: 'readonly',
       },
     },
     rules: {

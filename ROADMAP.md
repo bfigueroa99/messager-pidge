@@ -203,7 +203,11 @@ later.
 - [x] a component test renders the index route and finds the app name
 - [x] importing `@pidge/flight-sim` from `apps/mobile` typechecks
 
-**Verify with:** `pnpm run verify && pnpm --filter mobile exec expo export -p web`
+**Verify with:** `pnpm run verify && pnpm --filter mobile run export:web` (M0-08
+wrapped the raw `expo export -p web` in `apps/mobile/scripts/export-web.mjs` to
+keep `app/_dev` out of the production bundle — running the raw command directly
+bypasses that and reintroduces the leak `tests/web-export.test.ts`'s `[M0-08]`
+test checks for)
 
 **Notes:** Expo SDK 57 is bridgeless-only; there is no legacy architecture to
 fall back to. Anything you add must support the New Architecture.
@@ -363,9 +367,9 @@ unattended loop to hit.
 
 ---
 
-### [ ] M0-08 — Headless eyes: web preview and screenshots
+### [x] M0-08 — Headless eyes: web preview and screenshots
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-07
+**Status:** done · **Size:** M · **Depends on:** M0-07
 **Read first:** `CLAUDE.md` (the layering rule and why it exists)
 
 **Why:** This container has no simulator. Without a headless render path no
@@ -387,14 +391,27 @@ This item buys sight.
 - Do not ship the `_dev` routes in a production bundle.
 
 **Acceptance criteria:**
-- [ ] `pnpm run shot -- index` writes a non-empty PNG in under 120 seconds
-- [ ] two consecutive runs with a frozen clock produce byte-identical PNGs
-- [ ] the exported production web bundle contains no `_dev` route
-- [ ] chromium installs in CI without an interactive prompt
+- [x] `pnpm run shot -- index` writes a non-empty PNG in under 120 seconds
+- [x] two consecutive runs with a frozen clock produce byte-identical PNGs
+- [x] the exported production web bundle contains no `_dev` route
+- [x] chromium installs in CI without an interactive prompt
 
 **Notes:** Freeze the clock via the query parameter *now*. Retrofitting
 determinism after the flight screen exists is painful, and every later chart
 screenshot depends on it.
+
+**Touches:** `scripts/shot.mjs`, `scripts/lib/file-lock.mjs`,
+`apps/mobile/app/_dev/[story].tsx`, `apps/mobile/scripts/export-web.mjs`
+(wraps `expo export -p web` — confirmed directly that the raw command still
+bundles `_dev` into `dist/` despite it having no `generateStaticParams`),
+`apps/mobile/package.json` (`export:web` now calls the wrapper),
+`tests/shot.test.ts`, `tests/web-export.test.ts` (extended with the
+no-`_dev`-route check — reusing that test's own export instead of running a
+second one avoids racing it, see the journal), `package.json` (`shot` script,
+`playwright` devDependency), `.gitignore`, `eslint.config.mjs` (globals for
+the new scripts), `.github/workflows/ci.yml`, `docs/DECISIONS.md` (ADR-009),
+`ROADMAP.md` (M0-07's own `Verify with` line, which the export wrapper made
+stale).
 
 ---
 

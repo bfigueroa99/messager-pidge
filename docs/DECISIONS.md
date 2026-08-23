@@ -127,3 +127,32 @@ it with a new one.
   Expo (drags the working PGlite suite and ts-jest along for a UI-only problem);
   waiting for a `jest-expo` that supports Jest 30 (blocks every UI item until an
   upstream release).
+
+## ADR-009 — Playwright (chromium only), driven by a plain script, not `@playwright/test`
+
+- **Date:** 2026-08-23 · **Iteration:** 9 · **Status:** accepted
+- **Context:** `M0-08` needs a headless render path — this container has no
+  simulator, so a browser screenshot is the only way any agent ever sees the
+  UI. Something has to boot a web build, drive a browser to it, and save a PNG.
+- **Decision:** the plain `playwright` package (not `@playwright/test`, which
+  would also pull in a test runner and reporter this repo does not need) as a
+  devDependency, driven from a small script (`scripts/shot.mjs`) rather than a
+  Playwright test file. Chromium only — no WebKit or Firefox, since the app has
+  no browser-specific behaviour to catch and every extra browser is another
+  binary to install in CI. The script prefers a pre-installed browser at
+  `/opt/pw-browsers/chromium` when present (this development container ships
+  one outside Playwright's managed cache) and otherwise falls back to
+  Playwright's normal resolution, which is what a real CI runner uses after an
+  explicit `playwright install --with-deps chromium` step.
+- **Consequences:** `pnpm run shot -- <story>` is the one command that lets an
+  agent see a screen. `M1-05`'s frozen-clock screenshot tests and any future
+  visual check build on this same script rather than reinventing browser
+  automation. Cost: a second browser download path to keep working (CI's vs.
+  this container's), traded for not depending on any one container's specific
+  pre-installed binary always being there.
+- **Rejected:** `puppeteer` (Playwright's multi-browser API and auto-waiting
+  are worth the same dependency weight, and Playwright is also what `M1-05`'s
+  eventual pixel work would reach for); requiring every session to run
+  `playwright install` itself (this container cannot always reach Playwright's
+  CDN, and re-downloading ~150 MB per session is wasteful when a build is
+  already sitting on disk).
