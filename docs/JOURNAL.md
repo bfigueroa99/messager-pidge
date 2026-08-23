@@ -670,3 +670,73 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none new. This landed entirely within the item's own
   `Touches:` (`scripts/check-roadmap-tests.mjs`,
   `tests/check-roadmap-tests.test.ts`); no drift into other files.
+
+---
+
+## Iteration 8 — 2026-08-23 — M0-14
+
+- **Outcome:** done
+- **CI:** `mcp__github__*` tools were not available this session; skipped
+  straight to §2 per `docs/LOOP.md` §1.
+- **Selection:** `iteration` (8) − `last_hardening_iteration` (5) = 3 < 5, and
+  `iteration` (8) − `last_audit_iteration` (0) = 8 < 10, so neither override
+  applies. Topmost `todo` with satisfied dependencies is `M0-14` (depends on
+  `M0-07`, done). Size `S`.
+- **Verify:** typecheck ok · lint ok · 115 tests ok (112 → 115) · flight-sim
+  coverage 99.48% statements / 91.07% branches (unchanged) · `gate:roadmap` ok
+  (12 done, 11 pending) · `gate:tests` ok
+- **What landed:** `apps/mobile/tsconfig.json` gained `"outDir": "./.tsc-out"`.
+  Reproduced the item's own history first: added `"src/**/*.json"` to `include`
+  (needed regardless — `resolveJsonModule` was on but the JSON import in
+  `src/config/app-name.ts` wasn't in any include pattern, which only surfaces as
+  `TS6307` once a composite project actually needs to emit, i.e. only once
+  `outDir` exists — confirmed by adding bare `outDir` first and watching a clean
+  build fail with exactly that error), then confirmed with `tsc -b --noEmit
+  false` (forcing emission past the `noEmit: true` inherited from
+  `expo/tsconfig.base`, which is what normally suppresses it) that the pre-fix
+  config really does spill `.js`/`.d.ts` next to every `apps/mobile` source
+  file, and the post-fix config routes all of it under `.tsc-out` instead.
+  Three new `[M0-14]` tests: the `outDir` is declared outside `app/`/`src/`,
+  it does not collide with `apps/mobile/dist` (see below), and a forced-emit
+  build lands everything under `.tsc-out` with nothing beside the sources.
+  `/code-review --effort high` caught two things before this was safe to land:
+  first, my initial choice of `outDir: "./dist"` collides with `apps/mobile/dist`
+  — `expo export -p web` (M0-07) always writes there, and
+  `tests/web-export.test.ts` deletes and repopulates that exact directory, so
+  running both build paths would race non-deterministically; renamed to
+  `./.tsc-out` and added it to `.gitignore` (the generic `dist/`/`build/`
+  patterns don't cover a dotdir name). Second, the review ran a plain `tsc -b`
+  with `outDir` removed against my first test and it still passed, because
+  ordinary `tsc -b` never emits here at all (`noEmit: true` wins) — the
+  dynamic test was vacuous. Rewrote it to force real emission with
+  `--noEmit false`, which does discriminate: confirmed it fails, with stray
+  files under `app/` and `src/`, against the tsconfig from before this fix.
+- **Surprises for the next agent:**
+  - **`apps/mobile`'s `tsc -b` never actually emits anything under normal
+    `pnpm run typecheck`** — `noEmit: true` from `expo/tsconfig.base` wins over
+    `composite: true` in every build I could produce. The stray-file bug this
+    item exists for could not be reproduced through the front door at all; the
+    only way to exercise it directly is `tsc -b --noEmit false`, which
+    overrides the config on the command line. Whatever triggered the original
+    one-time reproduction (this item's own history names the `unrs-resolver`
+    ignored-build-script warning as a suspect) is still unexplained — this fix
+    is defense in depth for a bug whose real trigger nobody has caught twice.
+  - **Never default a new build-output directory to `dist` in this repo**
+    without checking `apps/mobile/dist` first — it is not a generic scratch
+    name here, it is `expo export -p web`'s one fixed output path, owned and
+    actively raced by `tests/web-export.test.ts`. Any future composite project
+    or build script reaching for `./dist` in `apps/mobile` needs a different
+    name.
+  - **A dynamic test that "proves" a fix by running the real command with
+    default flags can pass for the wrong reason** — here, because the
+    surrounding config (`noEmit: true`) already suppressed the exact failure
+    mode being tested, independent of the fix. Forcing the failure condition
+    directly (`--noEmit false`) rather than trusting the default invocation was
+    the only way to get a test that actually discriminates fixed from unfixed.
+- **Follow-ups filed:** none. This landed inside the item's own intent even
+  though the file list grew: `Touches:` originally listed only
+  `apps/mobile/tsconfig.json` and `.gitignore`, but the acceptance criteria
+  ("produces no `.js`/`.d.ts`") required a test proving it, so
+  `tests/mobile-tsconfig-outdir.test.ts` was added and the `Touches:` line
+  updated to match, the same way `M0-13` and earlier items list their own test
+  file.

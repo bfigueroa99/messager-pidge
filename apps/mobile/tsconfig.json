@@ -7,6 +7,7 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,
     "composite": true,
+    "outDir": "./.tsc-out",
     "types": ["jest", "node"],
     "paths": {
       "@pidge/flight-sim": ["../../packages/flight-sim/src/index.ts"]
@@ -17,6 +18,7 @@
     "app/**/*.tsx",
     "src/**/*.ts",
     "src/**/*.tsx",
+    "src/**/*.json",
     "app.config.ts",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"

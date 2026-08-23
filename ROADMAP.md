@@ -333,9 +333,9 @@ worse than none, because it reads as evidence.
 
 ---
 
-### [ ] M0-14 — Give `apps/mobile`'s composite project an `outDir`
+### [x] M0-14 — Give `apps/mobile`'s composite project an `outDir`
 
-**Status:** in-progress · **Size:** S · **Depends on:** M0-07
+**Status:** done · **Size:** S · **Depends on:** M0-07
 **Found by:** iteration 3, while landing `M0-10`
 
 **Why:** `packages/flight-sim/tsconfig.json` sets `rootDir`/`outDir` so its
@@ -354,12 +354,12 @@ red on a phantom file with no diff to point at is a bad failure mode for an
 unattended loop to hit.
 
 **Acceptance criteria:**
-- [ ] `apps/mobile/tsconfig.json` has an `outDir` outside the source tree
-- [ ] `pnpm run typecheck` from a clean `node_modules` produces no `.js`/`.d.ts`
+- [x] `apps/mobile/tsconfig.json` has an `outDir` outside the source tree
+- [x] `pnpm run typecheck` from a clean `node_modules` produces no `.js`/`.d.ts`
       file under `apps/mobile/app` or `apps/mobile/src`
-- [ ] `pnpm run verify` still exits 0
+- [x] `pnpm run verify` still exits 0
 
-**Touches:** `apps/mobile/tsconfig.json`, `.gitignore`
+**Touches:** `apps/mobile/tsconfig.json`, `.gitignore`, `tests/mobile-tsconfig-outdir.test.ts`
 
 ---
 
