@@ -365,7 +365,7 @@ unattended loop to hit.
 
 ### [ ] M0-08 — Headless eyes: web preview and screenshots
 
-**Status:** todo · **Size:** M · **Depends on:** M0-07
+**Status:** in-progress · **Size:** M · **Depends on:** M0-07
 **Read first:** `CLAUDE.md` (the layering rule and why it exists)
 
 **Why:** This container has no simulator. Without a headless render path no
