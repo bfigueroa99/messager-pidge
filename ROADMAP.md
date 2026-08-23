@@ -335,7 +335,7 @@ worse than none, because it reads as evidence.
 
 ### [ ] M0-14 — Give `apps/mobile`'s composite project an `outDir`
 
-**Status:** todo · **Size:** S · **Depends on:** M0-07
+**Status:** in-progress · **Size:** S · **Depends on:** M0-07
 **Found by:** iteration 3, while landing `M0-10`
 
 **Why:** `packages/flight-sim/tsconfig.json` sets `rootDir`/`outDir` so its
