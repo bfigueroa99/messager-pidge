@@ -930,3 +930,87 @@ knowledge survives a context reset.
   findings above are notes for whenever `M1-05` or a future hardening pass
   next touches `scripts/shot.mjs` / `export-web.mjs`, not standalone items on
   their own yet.
+
+---
+
+## Iteration 11 — 2026-08-24 — AUDIT
+
+- **Outcome:** done
+- **CI:** run 79 on `7ad282d` (this branch's tip at claim time) completed in
+  3 seconds with a 404 on `get_job_logs` — the same never-scheduled shape
+  Q-003 already documents, confirmed directly via `get_job_logs` rather than
+  assumed from duration alone. Not this iteration's item; carried straight
+  to §2.
+- **Selection:** `iteration` (11) − `last_hardening_iteration` (10) = 1 < 5,
+  so HARDENING does not apply. `iteration` (11) − `last_audit_iteration`
+  (0) = 11 >= 10, so **AUDIT** applies — the first audit this loop has ever
+  run.
+- **Verify:** typecheck ok · lint ok · 119 tests ok (unchanged — audit
+  iterations touch no source, per `docs/LOOP.md` §7) · flight-sim coverage
+  99.48% statements / 91.07% branches (unchanged) · `gate:roadmap` ok (14
+  done, 10 pending — `M0-15` added) · `gate:tests` ok
+- **What landed:** `docs/AUDIT.md`, created for the first time. Re-derived
+  each of `docs/PRODUCT.md` §3's INV-1…INV-7 from the actual shipped code
+  rather than trusting earlier journal entries' claims: read
+  `speed.ts`/`hazard.ts`/`plan.ts`/`state.ts`/`rng.ts` and the RLS/loft-snap
+  migrations directly, then matched each to the specific test that already
+  proves it. All seven are enforced and proved; the audit table records the
+  exact file:line for both. Then worked the two drift directions §7
+  requires:
+  - **Shipped code vs. `PRODUCT.md`:** grepped the non-goal vocabulary from
+    §8 (`streak`, `undo`, `retry`, `fast-path`, `boost`, `gacha`, `breed`,
+    `rarity`, `leaderboard`, …) across `packages/`, `apps/`, `supabase/`
+    excluding tests. Two hits, both incidental prose (a rendering-artifact
+    "streak", cron's "does not retry"), no real mechanic implemented.
+  - Reading `speed.ts`'s wind/storm model (§7's "Passage" mechanic) against
+    §7's own text — "It adds texture and duration; it never subtracts" —
+    surfaced a real contradiction, not just a style nit: with
+    `stormIntensity: 0` a tailwind at the clamp ceiling
+    (`MAX_WIND_COMPONENT_KMH = 25`) pushes `effectiveSpeedKmh` from the calm
+    177.03 km/h to 202.03 km/h — confirmed by evaluating the actual clamp
+    expression, not by inspection alone — and
+    `plan.test.ts:194`'s `[M0-03] slows a bird in a storm and speeds it with
+    a tailwind` test asserts `tail > calm` as the *intended* behaviour. A
+    weather-driven speedup isn't user-initiated, but PRODUCT.md draws no
+    such exception, and the "No speed" non-goal in §8 is explicit ("No
+    boosts... not even as a joke"). Filed `M0-15` at the top of
+    `ROADMAP.md` (a new "AUDIT gaps" section, ahead of `## M0`, so it is
+    unambiguously the topmost `todo` and gets fixed before `M1-01` resumes)
+    rather than fixing it in place — audit iterations change no source, per
+    `docs/LOOP.md` §7's "no code changes except tests."
+  - **`ROADMAP.md` vs. `PRODUCT.md`:** read all nine pending `M1-*` items in
+    full. Each names a specific PRODUCT.md section or invariant in its own
+    "Why," and none introduces a non-goal — `M1-07`'s acceptance criteria
+    explicitly forbid a recall/cancel/unsend handler; `M1-09`'s
+    `TIME_SCALE` is explicitly gated behind `EXPO_PUBLIC_E2E`, not a
+    production shortcut. No item found that PRODUCT.md does not justify.
+- **Surprises for the next agent:**
+  - **A test can encode the exact contradiction an audit is looking for and
+    still pass, because it was written to prove the code's actual
+    behaviour rather than the product's stated intent.**
+    `plan.test.ts:194` isn't a bug in the test — it correctly describes
+    what `effectiveSpeedKmh` does — but nobody had put `speed.ts`'s clamp
+    math next to PRODUCT.md §7's exact sentence until this audit did. A
+    green `pnpm run verify` proves internal consistency, never alignment
+    with the product spec; that second check is what §7 audits exist for,
+    and it is worth remembering the next time a hardening or feature
+    iteration touches `speed.ts` — `M0-15`'s fix must not just make a new
+    test pass, it must change what the *old* test (`plan.test.ts:194`) is
+    asserting.
+  - **Where an AUDIT-filed item goes in `ROADMAP.md` isn't specified by
+    `docs/LOOP.md` §7 beyond "inserted at the top."** Placed `M0-15` under a
+    new "AUDIT gaps" section physically before `## M0 — Scaffolding`
+    (rather than appended inside the M0 section, after `M0-14`) so it reads
+    as its own category rather than implying it was part of M0's original
+    goal, and so it is unambiguously the topmost `todo` regardless of how
+    future milestone sections get reordered. If a second AUDIT-filed item
+    ever lands, put it in the same section rather than starting a new one
+    per audit.
+  - **`docs/AUDIT.md` did not exist before this iteration** — this was the
+    first time `last_audit_iteration` (0) crossed the `>= 10` threshold in
+    `docs/LOOP.md` §2's table. Future audits overwrite the file rather than
+    append to it, per §7's own instruction; this iteration's table is the
+    baseline the next audit (due once `iteration - 11 >= 10`, i.e. by
+    iteration 21 at the latest) will be compared against.
+- **Follow-ups filed:** `M0-15` (see above) — the one drift finding from
+  this audit. No other roadmap changes.

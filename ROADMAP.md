@@ -14,6 +14,65 @@ item to `blocked` — see `docs/LOOP.md` §6 of "how you control it". Never dele
 
 ---
 
+## AUDIT gaps
+
+Items filed by an AUDIT iteration (`docs/LOOP.md` §7) because a shipped
+feature contradicts `docs/PRODUCT.md`. Kept in their own section at the top
+so they are always the topmost `todo` and get fixed before new feature work
+resumes, without implying they belong to any milestone's own goal.
+
+---
+
+### [ ] M0-15 — `effectiveSpeedKmh` must never let wind shorten a flight below its calm duration
+
+**Status:** todo · **Size:** S · **Depends on:** none
+**Read first:** `docs/PRODUCT.md` §7 (Passage — "It adds texture and duration;
+it never subtracts."), `packages/flight-sim/src/speed.ts`
+
+**Why:** Filed by the AUDIT iteration (`docs/LOOP.md` §7), iteration 11, as a
+drift finding — see `docs/AUDIT.md`. PRODUCT.md §7 is explicit that the wind
+mechanic must only ever add duration, never subtract it, but
+`effectiveSpeedKmh` currently lets a tailwind push cruise speed *above*
+`BASE_SPEED_KMH * storm * fatigue`, and `plan.test.ts`'s own
+`[M0-03] slows a bird in a storm and speeds it with a tailwind` test asserts
+exactly that as intended. A tailwind that shortens a flight is a speed boost
+gated on server-rolled weather instead of user action, but it is still a way
+for a flight to arrive sooner than its unmodified physics allow — the thing
+§7 and the "No speed" non-goal (§8) both rule out.
+
+**Do:**
+- Change `effectiveSpeedKmh` so a positive (tailwind) `windComponentKmh`
+  never raises speed above what `storm`/`fatigue` alone would give — e.g.
+  clamp the wind term to `[-MAX_WIND_COMPONENT_KMH, 0]`, or clamp the final
+  result to `<= BASE_SPEED_KMH * storm * fatigue`.
+- Rewrite the `[M0-03] slows a bird in a storm and speeds it with a
+  tailwind` test (renaming it `[M0-15]`) to assert the corrected behaviour:
+  a tailwind may relieve some of a storm's penalty, but never exceed the
+  calm baseline.
+- Add a `[M0-15]` regression test asserting `effectiveSpeedKmh` never
+  exceeds the wind-free speed for the same `stormIntensity`/`distanceKm`,
+  across a range of wind inputs including the existing absurd-wind clamp
+  test's input.
+
+**Do NOT:**
+- Do not remove the wind mechanic; §7 wants it for texture, just never as a
+  net speedup.
+- Do not touch `hazard.ts` or `plan.ts`'s death-roll logic — this is a
+  `speed.ts`-only fix.
+
+**Acceptance criteria:**
+- [ ] `effectiveSpeedKmh` never returns a value greater than the same call
+  with `windComponentKmh: 0`
+- [ ] a strong tailwind still measurably reduces the *penalty* from a storm,
+  without exceeding the calm baseline
+- [ ] the corrected test fails against the pre-fix function and passes
+  against the fix
+
+**Touches:** `packages/flight-sim/src/speed.ts`,
+`packages/flight-sim/src/plan.test.ts`
+
+---
+
 ## M0 — Scaffolding
 
 **Goal:** an agent can clone, install, typecheck, lint, test the pure engine,
