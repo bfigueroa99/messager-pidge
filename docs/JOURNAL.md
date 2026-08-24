@@ -836,3 +836,97 @@ knowledge survives a context reset.
   own intent; see the updated `Touches:` list on `M0-08` itself for the full
   file set, which grew well past its original guess (as most items' does) once
   the export leak and the concurrency race were discovered mid-implementation.
+
+---
+
+## Iteration 10 — 2026-08-24 — HARDENING
+
+- **Outcome:** done
+- **CI:** the previous commit's runs (69–75) all completed in 3–4 seconds with
+  no runner assigned — the same never-scheduled shape Q-003 already documents,
+  not a real failure. Not this iteration's item.
+- **Selection:** both overrides in `docs/LOOP.md` §2's table fired at once —
+  `iteration(10) - last_hardening_iteration(5) = 5 >= 5` and
+  `iteration(10) - last_audit_iteration(0) = 10 >= 10`. Took the table's first
+  matching row, HARDENING, over AUDIT.
+- **Verify:** typecheck ok · lint ok · 119 tests ok (unchanged) · flight-sim
+  coverage 99.48% statements / 91.07% branches (unchanged, both above
+  threshold) · `gate:roadmap` ok (14 done, 9 pending) · `gate:tests` ok
+- **What landed:** worked `docs/LOOP.md` §6's checklist top to bottom against
+  the diff accumulated since the last hardening pass (`12617be..HEAD`, ~1,166
+  lines across M0-08/M0-12/M0-13/M0-14):
+  1. Ticked-without-a-test criteria: none — `gate:roadmap` already ok.
+  2. Dead code: `npx knip` reported only the three dependencies/imports
+     already verified as false positives in iteration 6's HARDEN commit
+     (`expo-font`, the phantom `expo-updates` "unlisted dependency", and
+     `jest.config.js`'s `apps/mobile/` projects-shorthand). Nothing new.
+  3. `/simplify` (4 parallel review agents: reuse, simplification, efficiency,
+     altitude) against that diff found two real, low-risk findings and fixed
+     both: `packages/flight-sim/src/geo.test.ts` had the same near-seam
+     `{ lat: -18.2, lon: 179.9 } / { lat: -17.7, lon: -177.0 }` coordinate pair
+     copy-pasted across three `[M0-12]` tests, hoisted to a module-level
+     `NEAR_SEAM` constant; `tests/shot.test.ts`'s "byte-identical PNGs" test
+     ran the full `pnpm run shot -- index` pipeline a redundant third time
+     just to get a "first" buffer to diff, when the preceding test in the same
+     file had already produced one — now reuses it, cutting the file from
+     three full shot invocations to two.
+  4. Coverage: already well above threshold, no action.
+  5. `any`/`@ts-ignore`/`TODO`/`FIXME`: grepped the real source tree (not
+     `docs/`, which discusses these terms conceptually) — none found.
+  6. Dependencies without an ADR: none new; `playwright` has ADR-009,
+     `@electric-sql/pglite` has ADR-006, `jest-expo` has ADR-008.
+  `/code-review --effort high` on the two touched test files caught a real
+  issue in the shot.mjs fix before it landed: reusing the previous test's
+  output by re-`readFileSync`-ing `SHOT_PNG` off disk means a pipeline failure
+  between that test's `rmSync` and its `runShot()` would leave the file
+  missing, and the second test would then throw a confusing `ENOENT` instead
+  of surfacing the real failure — and an isolated run of just the second test
+  (e.g. `jest -t`) would silently compare against whatever stale PNG happened
+  to be on disk. Fixed by threading the buffer through an explicit
+  module-scoped variable (`firstRunPng`) set by the first test, with the
+  second test throwing a clear, named error if it is unset, instead of
+  re-reading the file.
+- **Surprises for the next agent:**
+  - **Two override conditions in the §2 selection table can both be true on
+    the same iteration** (they were here: iteration − last_hardening = 5 and
+    iteration − last_audit = 10, both meeting their thresholds on iteration
+    10 for the first time). The table doesn't say what to do when more than
+    one row matches; this iteration took the first matching row top-to-bottom
+    (HARDENING before AUDIT) as the natural reading. Iteration 11 will still
+    owe an AUDIT — `last_audit_iteration` is still 0, so `11 - 0 = 11 >= 10`
+    stays true regardless of what iteration 11's own item is. Worth a
+    clarifying line in `docs/LOOP.md` §2 if this comes up again, but it isn't
+    blocking: the loop degrades toward progress either way.
+  - **`/simplify`'s own fix can need a second pass through `/code-review`.**
+    The shot.mjs reuse fix looked safe on its own terms (Jest's declaration
+    order guarantees the file exists) but `/code-review` caught the sharper
+    failure-diagnostics problem: *which* file existing wasn't the risk, it was
+    what a *failed* first test leaves behind, and what an isolated second-test
+    run silently trusts. Re-run `pnpm run verify` and `/code-review` after
+    every `/simplify` fix, even ones that look purely mechanical — this repo's
+    own §4 already says so, and this iteration is a concrete case of why.
+  - **Two `/simplify` "altitude" findings were deferred, not fixed, and are
+    worth a future look:** (1) `apps/mobile/scripts/export-web.mjs`'s
+    park/restore-`app/_dev`-around-the-export mechanism is a filesystem-level
+    workaround for something Metro/Expo's bundler config could exclude more
+    directly (e.g. a `resolver.blockList` gated on the export target, or
+    keeping story components outside `app/` entirely) — right now it needs a
+    cross-process lock and crash-recovery logic just to make a directory
+    rename safe. (2) `scripts/lib/file-lock.mjs`'s cross-process mutex exists
+    because two Jest test files starved each other for CPU when scheduled
+    concurrently, but the fix is wired into two real shipped scripts, so every
+    real `expo export -p web` now pays a lock-acquire cost that exists only
+    to solve a test-scheduling problem — serializing the two heavy test files
+    at the Jest config level (e.g. a slow/integration project with
+    `maxWorkers: 1`) would let the lock be removed from production tooling
+    entirely. Neither was fixed this iteration: both would change the
+    behavior of an already-shipped, well-tested mechanism (M0-08), which is
+    more risk than a hardening pass should take on. Also unchanged: the
+    already-known duplicate poll-loop shape between `withFileLock` and
+    `waitForServer` — this was already found and explicitly deferred in the
+    M0-08 journal entry (iteration 9); still true, still not fixed, still not
+    a new finding.
+- **Follow-ups filed:** none new as roadmap items — the two deferred altitude
+  findings above are notes for whenever `M1-05` or a future hardening pass
+  next touches `scripts/shot.mjs` / `export-web.mjs`, not standalone items on
+  their own yet.

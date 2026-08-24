@@ -93,6 +93,13 @@ describe('bearingDeg', () => {
   });
 });
 
+// A route that crosses the antimeridian on its very first densified sample —
+// used across the M0-12 tests below, which all care about that exact seam.
+const NEAR_SEAM = {
+  origin: { lat: -18.2, lon: 179.9 },
+  destination: { lat: -17.7, lon: -177.0 },
+};
+
 describe('splitAtAntimeridian', () => {
   it('[M0-02] splits a Tokyo to LA route into two drawable segments', () => {
     // Without this the polyline streaks straight back across the whole map.
@@ -116,8 +123,7 @@ describe('splitAtAntimeridian', () => {
   });
 
   it('[M0-12] a route starting just west of the antimeridian keeps its origin vertex', () => {
-    const origin = { lat: -18.2, lon: 179.9 };
-    const destination = { lat: -17.7, lon: -177.0 };
+    const { origin, destination } = NEAR_SEAM;
     const segments = arcSegments(origin, destination, 8);
     expect(segments[0]![0]!.lat).toBeCloseTo(origin.lat, 9);
     expect(segments[0]![0]!.lon).toBeCloseTo(origin.lon, 9);
@@ -127,16 +133,13 @@ describe('splitAtAntimeridian', () => {
     for (const seg of arcSegments(TOKYO, LAX)) {
       expect(seg.length).toBeGreaterThanOrEqual(2);
     }
-    const origin = { lat: -18.2, lon: 179.9 };
-    const destination = { lat: -17.7, lon: -177.0 };
-    for (const seg of arcSegments(origin, destination, 8)) {
+    for (const seg of arcSegments(NEAR_SEAM.origin, NEAR_SEAM.destination, 8)) {
       expect(seg.length).toBeGreaterThanOrEqual(2);
     }
   });
 
   it('[M0-12] the sum-of-segments property still holds across the seam', () => {
-    const origin = { lat: -18.2, lon: 179.9 };
-    const destination = { lat: -17.7, lon: -177.0 };
+    const { origin, destination } = NEAR_SEAM;
     const direct = haversineKm(origin, destination);
     const segments = arcSegments(origin, destination, 8);
     let sum = 0;

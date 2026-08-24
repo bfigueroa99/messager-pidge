@@ -5,6 +5,21 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..');
 const SHOT_PNG = join(ROOT, 'artifacts', 'shots', 'index.png');
 
+function runShot(): Buffer {
+  execFileSync('pnpm', ['run', 'shot', '--', 'index'], {
+    cwd: ROOT,
+    stdio: 'pipe',
+    env: { ...process.env, CI: '1' },
+  });
+  return readFileSync(SHOT_PNG);
+}
+
+// Set by the first test below and read by the second, so a failure or an
+// isolated run of the second test (e.g. `jest -t`) fails loudly on a missing
+// buffer instead of silently comparing against a stale index.png left on
+// disk by some earlier, unrelated run.
+let firstRunPng: Buffer | undefined;
+
 /**
  * This container has no simulator (`CLAUDE.md`), so a headless browser
  * screenshot is the only way any agent ever sees the UI. These tests exercise
@@ -19,11 +34,7 @@ describe('the app can be seen headlessly', () => {
       rmSync(SHOT_PNG, { force: true });
 
       const start = Date.now();
-      execFileSync('pnpm', ['run', 'shot', '--', 'index'], {
-        cwd: ROOT,
-        stdio: 'pipe',
-        env: { ...process.env, CI: '1' },
-      });
+      firstRunPng = runShot();
       const elapsedMs = Date.now() - start;
 
       expect(existsSync(SHOT_PNG)).toBe(true);
@@ -42,25 +53,25 @@ describe('the app can be seen headlessly', () => {
   it(
     '[M0-08] two consecutive runs with a frozen clock produce byte-identical PNGs',
     () => {
-      execFileSync('pnpm', ['run', 'shot', '--', 'index'], {
-        cwd: ROOT,
-        stdio: 'pipe',
-        env: { ...process.env, CI: '1' },
-      });
-      const first = readFileSync(SHOT_PNG);
+      // Reuses the PNG the test above just produced as the "first" run instead
+      // of paying for a third full pipeline invocation — `it`s in one
+      // `describe` run in declaration order in a single process, the same
+      // reasoning `tests/web-export.test.ts` relies on for its own
+      // no-`_dev`-route check. Read from the variable the previous test set,
+      // not the file it wrote, so a failed or skipped previous test fails
+      // this one loudly instead of comparing against a stale file on disk.
+      if (!firstRunPng) {
+        throw new Error(
+          'firstRunPng is unset — the previous test must run first and succeed',
+        );
+      }
+      const second = runShot();
 
-      execFileSync('pnpm', ['run', 'shot', '--', 'index'], {
-        cwd: ROOT,
-        stdio: 'pipe',
-        env: { ...process.env, CI: '1' },
-      });
-      const second = readFileSync(SHOT_PNG);
-
-      expect(Buffer.compare(first, second)).toBe(0);
+      expect(Buffer.compare(firstRunPng, second)).toBe(0);
     },
-    // Two full runs back to back — double the single-run ceiling above, plus
-    // margin, so a slow-but-correct run never gets mistaken for a hang.
-    1_000_000,
+    // One full run — same ceiling as the test above, plus margin, so a
+    // slow-but-correct run never gets mistaken for a hang.
+    480_000,
   );
 
   it('[M0-08] chromium installs in CI without an interactive prompt', () => {
