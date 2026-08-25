@@ -500,7 +500,7 @@ learns it existed.
 
 ### [ ] M1-01 — Design tokens, typography, and the single strings module
 
-**Status:** todo · **Size:** M · **Depends on:** M0-07
+**Status:** in-progress · **Size:** M · **Depends on:** M0-07
 **Read first:** `docs/PRODUCT.md` §5 (the tone-of-voice table)
 
 **Why:** Centralising every user-facing string in one reviewed file is the
