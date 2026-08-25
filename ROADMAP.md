@@ -23,9 +23,9 @@ resumes, without implying they belong to any milestone's own goal.
 
 ---
 
-### [ ] M0-15 — `effectiveSpeedKmh` must never let wind shorten a flight below its calm duration
+### [x] M0-15 — `effectiveSpeedKmh` must never let wind shorten a flight below its calm duration
 
-**Status:** in-progress · **Size:** S · **Depends on:** none
+**Status:** done · **Size:** S · **Depends on:** none
 **Read first:** `docs/PRODUCT.md` §7 (Passage — "It adds texture and duration;
 it never subtracts."), `packages/flight-sim/src/speed.ts`
 
@@ -61,15 +61,25 @@ for a flight to arrive sooner than its unmodified physics allow — the thing
   `speed.ts`-only fix.
 
 **Acceptance criteria:**
-- [ ] `effectiveSpeedKmh` never returns a value greater than the same call
+- [x] `effectiveSpeedKmh` never returns a value greater than the same call
   with `windComponentKmh: 0`
-- [ ] a strong tailwind still measurably reduces the *penalty* from a storm,
+- [x] a strong tailwind still measurably reduces the *penalty* from a storm,
   without exceeding the calm baseline
-- [ ] the corrected test fails against the pre-fix function and passes
+- [x] the corrected test fails against the pre-fix function and passes
   against the fix
 
 **Touches:** `packages/flight-sim/src/speed.ts`,
 `packages/flight-sim/src/plan.test.ts`
+
+**Resolution note:** criteria #1 and #2 above are in tension taken fully
+literally — #1 requires `effectiveSpeedKmh` to never exceed its own
+`windComponentKmh: 0` result *for the same storm and distance*, which
+mathematically forces a tailwind's contribution to be clamped to zero
+whenever added to that same storm's baseline (any positive contribution
+would, by definition, exceed the zero-wind baseline #1 pins). So "measurably
+reduces the penalty from a storm" (#2) is satisfied by comparing a tailwind
+against a headwind *during the same storm*, not against that storm's own
+zero-wind speed — see `docs/JOURNAL.md`'s entry for this item.
 
 ---
 

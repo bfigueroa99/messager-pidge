@@ -191,18 +191,46 @@ describe('hazard model', () => {
 });
 
 describe('weather', () => {
-  it('[M0-03] slows a bird in a storm and speeds it with a tailwind', () => {
+  it('[M0-15] slows a bird in a storm, and a tailwind relieves a headwind without exceeding calm', () => {
     const calm = effectiveSpeedKmh({ windComponentKmh: 0, stormIntensity: 0, distanceKm: 1000 });
     const stormy = effectiveSpeedKmh({ windComponentKmh: 0, stormIntensity: 1, distanceKm: 1000 });
-    const tail = effectiveSpeedKmh({ windComponentKmh: 25, stormIntensity: 0, distanceKm: 1000 });
+    const stormyHeadwind = effectiveSpeedKmh({ windComponentKmh: -25, stormIntensity: 1, distanceKm: 1000 });
+    const stormyTailwind = effectiveSpeedKmh({ windComponentKmh: 25, stormIntensity: 1, distanceKm: 1000 });
+    const calmTailwind = effectiveSpeedKmh({ windComponentKmh: 25, stormIntensity: 0, distanceKm: 1000 });
+
     expect(stormy).toBeLessThan(calm);
-    expect(tail).toBeGreaterThan(calm);
+    // a tailwind measurably relieves the extra penalty a headwind would add during the same storm
+    expect(stormyTailwind).toBeGreaterThan(stormyHeadwind);
+    // but it never turns a stormy or a calm flight into something faster than calm itself
+    expect(stormyTailwind).toBeLessThanOrEqual(calm);
+    expect(calmTailwind).toBeLessThanOrEqual(calm);
   });
 
-  it('[M0-03] clamps wind so weather can never dominate the journey', () => {
-    const absurd = effectiveSpeedKmh({ windComponentKmh: 5000, stormIntensity: 0, distanceKm: 1000 });
-    const capped = effectiveSpeedKmh({ windComponentKmh: 25, stormIntensity: 0, distanceKm: 1000 });
-    expect(absurd).toBe(capped);
+  it('[M0-15] never exceeds the wind-free speed for the same storm and distance', () => {
+    const storms = [0, 0.25, 0.5, 0.75, 1];
+    const distances = [50, 1000, 3936, 16994, 50000];
+    const winds = [-5000, -25, -1, 0, 1, 25, 5000];
+
+    for (const stormIntensity of storms) {
+      for (const distanceKm of distances) {
+        const windFree = effectiveSpeedKmh({ windComponentKmh: 0, stormIntensity, distanceKm });
+        for (const windComponentKmh of winds) {
+          expect(effectiveSpeedKmh({ windComponentKmh, stormIntensity, distanceKm })).toBeLessThanOrEqual(
+            windFree,
+          );
+        }
+      }
+    }
+  });
+
+  it('[M0-15] clamps an extreme headwind at the same bound as the boundary value, and a tailwind never past zero effect', () => {
+    const absurdHeadwind = effectiveSpeedKmh({ windComponentKmh: -5000, stormIntensity: 0, distanceKm: 1000 });
+    const cappedHeadwind = effectiveSpeedKmh({ windComponentKmh: -25, stormIntensity: 0, distanceKm: 1000 });
+    expect(absurdHeadwind).toBe(cappedHeadwind);
+
+    const absurdTailwind = effectiveSpeedKmh({ windComponentKmh: 5000, stormIntensity: 0, distanceKm: 1000 });
+    const noWind = effectiveSpeedKmh({ windComponentKmh: 0, stormIntensity: 0, distanceKm: 1000 });
+    expect(absurdTailwind).toBe(noWind);
   });
 
   it('[M0-03] tires a bird on very long hauls', () => {

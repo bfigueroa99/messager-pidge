@@ -1014,3 +1014,86 @@ knowledge survives a context reset.
     iteration 21 at the latest) will be compared against.
 - **Follow-ups filed:** `M0-15` (see above) — the one drift finding from
   this audit. No other roadmap changes.
+
+---
+
+## Iteration 12 — 2026-08-25 — M0-15
+
+- **Outcome:** done
+- **CI:** run 83 on `6f08945` (the previous tip) completed in 3 seconds with
+  `runner_id: 0`, empty `runner_name` — the same never-scheduled shape
+  Q-003 documents, confirmed directly via `get_workflow_job` before moving
+  on. Not this iteration's item.
+- **Selection:** `iteration(12) - last_hardening_iteration(10) = 2 < 5` and
+  `iteration(12) - last_audit_iteration(11) = 1 < 10` — neither override
+  applies. Took the topmost `todo`, `M0-15` (the AUDIT-filed gap from
+  iteration 11), size S, no deps.
+- **Verify:** typecheck ok · lint ok · 120 tests ok (+1 net: two tests
+  rewritten from `[M0-03]` to `[M0-15]`, one new `[M0-15]` regression test
+  added) · flight-sim coverage 100% statements / 100% branches on
+  `speed.ts` (unchanged overall project figures: 99.48% / 91.07%, both
+  above threshold) · `gate:roadmap` ok (15 done, 9 pending) · `gate:tests`
+  ok (floor raised 119 → 120)
+- **What landed:** `effectiveSpeedKmh` (`speed.ts`) now clamps the wind term
+  to `[-MAX_WIND_COMPONENT_KMH, 0]` instead of
+  `[-MAX_WIND_COMPONENT_KMH, MAX_WIND_COMPONENT_KMH]` — a tailwind
+  (positive `windComponentKmh`) can no longer add to cruise speed at all;
+  only a headwind (negative) still slows a bird down. This makes the
+  function provably never exceed its own `windComponentKmh: 0` result for
+  the same `stormIntensity`/`distanceKm`, closing the drift `docs/AUDIT.md`
+  found against PRODUCT.md §7 ("it adds texture and duration; it never
+  subtracts").
+  - **The two acceptance criteria in `ROADMAP.md` turn out to be in tension
+    when read fully literally**, and resolving that tension was most of
+    this item's actual work: criterion #1 ("never exceeds the same call
+    with `windComponentKmh: 0`") is a strict, testable invariant that
+    holds for every storm/distance combination independently — the `[M0-15]
+    never exceeds the wind-free speed...` regression test in
+    `plan.test.ts` checks it directly across a grid of storm, distance and
+    wind values (including the pre-existing absurd-wind case). Once that
+    invariant holds, criterion #2 ("a strong tailwind still measurably
+    reduces the *penalty* from a storm") cannot mean "faster than that same
+    storm's own zero-wind speed" — that would be a direct violation of
+    criterion #1, provably (algebraically: any positive contribution from
+    wind, added to a fixed storm baseline, exceeds that baseline by
+    definition). Resolved by writing the `[M0-15] slows a bird in a storm,
+    and a tailwind relieves a headwind...` test to compare a tailwind
+    against a *headwind* during the same storm (`stormyTailwind >
+    stormyHeadwind`, both `<= calm`) — a tailwind still has a real, provable
+    effect in the model (it avoids the additional penalty a headwind would
+    otherwise add), it just never manifests as a speedup relative to no
+    wind at all. Documented this resolution directly in `ROADMAP.md` under
+    a new "Resolution note" on the item itself, since a future reader
+    hitting the same two criteria cold would face the identical apparent
+    contradiction.
+  - `/code-review --effort high` caught a real regression the fix
+    introduced: the pre-existing (untouched) test
+    `[M0-03] clamps wind so weather can never dominate the journey` compared
+    `windComponentKmh: 5000` against `windComponentKmh: 25` and asserted
+    equality — after the fix, both collapse to the *same* zero wind
+    contribution, so the test still passes but no longer exercises
+    `MAX_WIND_COMPONENT_KMH` as a real boundary on the positive side (any
+    upper bound `>= 0` would pass it identically). Renamed to `[M0-15]` and
+    rewritten to assert the boundary meaningfully on the side that still
+    has one: extreme headwind (`-5000`) clamps to the same speed as the
+    boundary headwind (`-25`), plus a direct assertion that an extreme
+    tailwind (`5000`) now equals the plain no-wind speed.
+- **Surprises for the next agent:**
+  - **An AUDIT-filed roadmap item's own acceptance criteria can be
+    internally inconsistent**, not just inconsistent with `PRODUCT.md` (which
+    is what AUDIT iterations check for). Iteration 11 wrote M0-15's criteria
+    from a good-faith reading of the bug it found, but didn't algebraically
+    verify that its own two criteria could both hold at once. Worth
+    remembering the next time an AUDIT-filed item's "Do"/"Acceptance
+    criteria" text is taken as a literal spec rather than a strong hint:
+    check the criteria against each other, not just against the code, before
+    implementing.
+  - **A fix that satisfies a stated invariant can silently make an
+    unrelated, unmodified test vacuous** without failing it — the
+    `MAX_WIND_COMPONENT_KMH` boundary test still passed after this fix, it
+    just stopped testing anything meaningful on the positive side. `/simplify`
+    or `/code-review` catching this kind of "still green, no longer proving
+    what it claims to" is exactly why `docs/LOOP.md` §4 asks for a review
+    pass even on changes that look narrowly scoped to one function.
+- **Follow-ups filed:** none. This closes the one open AUDIT gap; the
+  roadmap returns to `M1-01` as the topmost `todo` next iteration.
