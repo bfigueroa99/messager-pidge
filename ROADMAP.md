@@ -498,9 +498,9 @@ learns it existed.
 
 ---
 
-### [ ] M1-01 — Design tokens, typography, and the single strings module
+### [x] M1-01 — Design tokens, typography, and the single strings module
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-07
+**Status:** done · **Size:** M · **Depends on:** M0-07
 **Read first:** `docs/PRODUCT.md` §5 (the tone-of-voice table)
 
 **Why:** Centralising every user-facing string in one reviewed file is the
@@ -522,13 +522,22 @@ failed. Retry?" if strings cannot be written inline.
 - Do not build a component library; build the tokens only.
 
 **Acceptance criteria:**
-- [ ] `strings.ts` has a key for every row of the tone-of-voice table
-- [ ] a JSX text node with a hardcoded literal fails the lint test
-- [ ] no string contains an exclamation point, "failed", "error", "retry" or "sent"
-- [ ] every string resolves through the typed accessor without a cast
+- [x] `strings.ts` has a key for every row of the tone-of-voice table
+- [x] a JSX text node with a hardcoded literal fails the lint test
+- [x] no string contains an exclamation point, "failed", "error", "retry" or "sent"
+- [x] every string resolves through the typed accessor without a cast
 
 **Notes:** The third criterion is the voice guard. If a legitimate string needs
 one of those words, rewrite the string — do not weaken the test.
+
+**Touches:** `apps/mobile/src/ui/theme/tokens.ts`,
+`apps/mobile/src/ui/theme/typography.ts`, `apps/mobile/src/ui/copy/strings.ts`,
+`apps/mobile/src/ui/copy/strings.test.ts`, `eslint.config.mjs` (the voice
+guard — a `no-restricted-syntax` block scoped to `apps/mobile/src/ui/**` and
+`apps/mobile/app/**`, excluding `app/_dev/**`), `tests/voice-guard.test.ts`,
+`tests/scripts/lint-fixture.mjs` (spawned as a subprocess so the guard's own
+`.mjs` ESM config can be linted against from a ts-jest/CommonJS test file —
+same reason `M0-13`'s gate tests spawn a subprocess).
 
 ---
 

@@ -1097,3 +1097,104 @@ knowledge survives a context reset.
     pass even on changes that look narrowly scoped to one function.
 - **Follow-ups filed:** none. This closes the one open AUDIT gap; the
   roadmap returns to `M1-01` as the topmost `todo` next iteration.
+
+---
+
+## Iteration 13 — 2026-08-25 — M1-01
+
+- **Outcome:** done
+- **CI:** run 87 on `924c922` (the previous tip) completed in ~4 seconds via
+  `mcp__github__actions_list`/`list_workflow_jobs`/`get_job_logs` (which
+  connected this iteration, unlike most). `get_job_logs` returned a
+  `logs_url` but downloading it with `return_content: true` 404'd — the same
+  never-scheduled shape Q-003 documents, just with one extra layer of
+  indirection this time (a real-looking URL that itself 404s, rather than the
+  job endpoint 404ing directly). Not this iteration's item.
+- **Selection:** `iteration(13) - last_hardening_iteration(10) = 3 < 5` and
+  `iteration(13) - last_audit_iteration(11) = 2 < 10` — neither override
+  applies. Took the topmost `todo`, `M1-01`, size M, deps (`M0-07`) done.
+- **Verify:** typecheck ok · lint ok · 127 tests ok (+7: 3 in
+  `apps/mobile/src/ui/copy/strings.test.ts`, 4 in `tests/voice-guard.test.ts`)
+  · flight-sim coverage unchanged (99.48%/91.07%, both above threshold —
+  this item touches no engine code) · `gate:roadmap` ok (16 done, 8 pending)
+  · `gate:tests` ok (floor raised 120 → 127, by the gate script itself as a
+  side effect of the run — not a manual edit)
+- **What landed:** `apps/mobile/src/ui/theme/tokens.ts` (colours, spacing,
+  radii, durations, dark-first), `apps/mobile/src/ui/theme/typography.ts`
+  (two font families — a serif for dispatch text, a mono for numbers — sized
+  by ratios against iOS Dynamic Type's default "body" size), and
+  `apps/mobile/src/ui/copy/strings.ts` (the copy catalogue) plus a
+  `no-restricted-syntax` "voice guard" added to `eslint.config.mjs`.
+  - **The `t()` accessor's shape came from a TypeScript limitation, not a
+    preference.** The obvious design — `t(key, ...args)` with
+    `args: Parameters<(typeof STRINGS)[K]>` for a generic `K` — typechecks
+    the *declaration* fine but fails to *call* `entry(...args)` inside the
+    function body with TS2556 ("a spread argument must either have a tuple
+    type or be passed to a rest parameter"): TypeScript cannot prove, for a
+    generic `K`, that `args`'s tuple type matches the specific overload
+    `STRINGS[K]` resolves to at that call site. The only ways out are an `as`
+    cast in the implementation (which CLAUDE.md's "no cast" reading of this
+    item's fourth acceptance criterion rules out) or restructuring so there
+    is only one parameter to discriminate on. Went with the second: `Copy` is
+    a discriminated union (`{ key: 'death'; birdName: string; ... } | ...`)
+    and `t(copy: Copy)` switches on `copy.key`, which *does* narrow cleanly
+    because TypeScript's control-flow analysis discriminates unions on a
+    single value, not across two separate parameters. Bonus: the `switch`
+    with no `default` and a `string` return type makes an unhandled variant
+    a compile error (not all code paths return a value), so "exhaustive" from
+    the item's "Do" bullet is mechanically enforced, not just asserted.
+  - **The voice guard is one ESLint rule, not a hand-rolled AST scanner.**
+    `no-restricted-syntax` already does exactly this job elsewhere in the
+    file (flight-sim's `Math.random()` ban), and ESQuery selectors support
+    regex attribute matching (`JSXText[value=/[A-Za-z]/]`), confirmed
+    directly against a bad and a good fixture with `eslint`'s `Linter` API
+    before wiring it into the shared config — so no second enforcement
+    mechanism competing with `pnpm run lint`.
+  - **`apps/mobile/app/_dev/[story].tsx` already had a hardcoded JSX text
+    literal** (`Unknown story: {story}`, in the not-found branch) before this
+    item started. Scoping the guard's `files` to
+    `apps/mobile/src/ui/**`/`apps/mobile/app/**` as literally written would
+    have made this iteration fail on code it didn't touch. Added
+    `ignores: ['apps/mobile/app/_dev/**']`: that route is developer-only
+    screenshot tooling (`M0-08`), never shipped (already excluded from the
+    production bundle), and its text was never reviewed against
+    `docs/PRODUCT.md` §5's tone-of-voice table in the first place — routing
+    it through the new copy catalogue would have mixed dev diagnostics into
+    the user-facing string review the catalogue exists to gate. Confirmed the
+    exclusion with a dedicated `[M1-01]` test.
+  - **Testing the guard against the checked-in `eslint.config.mjs` itself
+    hit the exact ESM/CommonJS seam `M0-13`'s journal entry already
+    documented.** A Jest test dynamically `import()`-ing the `.mjs` config
+    file fails with "Must use import to load ES Module" once it's compiled
+    through ts-jest's CommonJS target. Same fix as `M0-13`: spawn a plain
+    `node` subprocess (`tests/scripts/lint-fixture.mjs`, matched by
+    `eslint.config.mjs`'s existing `**/scripts/**/*.mjs` globals block) that
+    does the real ESM `import` natively, and have the Jest test shell out to
+    it and parse the JSON result.
+  - `/code-review --effort high` (single-pass, this item's diff was small and
+    additive) found nothing to fix — it independently re-ran lint, both
+    affected Jest projects, typecheck and `gate:tests`, and traced the new
+    rule against every existing `.tsx` file it now covers.
+- **Surprises for the next agent:**
+  - **A "typed accessor with no cast" requirement can force the whole shape
+    of an API**, not just its implementation detail. The natural
+    `t(key, ...args)` signature reads as the obviously-right design for a
+    keyed catalogue, and only fails at the one call inside the function body
+    that spreads generic args into a generically-indexed function — worth
+    checking early (a five-line `npx tsc` smoke test against the isolated
+    file, before writing any tests around it) rather than discovering it
+    after the rest of a module is built around the wrong shape.
+  - **`apps/mobile/app/_dev/**` is now excluded from two independent
+    mechanisms for two different reasons** — `export-web.mjs` physically
+    moves it aside so it never reaches the production bundle (`M0-08`), and
+    now the voice guard exempts it from the copy-catalogue requirement. If a
+    third mechanism ever needs a "this is real user-facing surface" test, it
+    should look at this same directory convention rather than inventing a
+    new one.
+  - **ESQuery selectors accept regex literals in attribute position**
+    (`[value=/pattern/]`), which makes `no-restricted-syntax` far more
+    capable than the flight-sim purity rules (import-name and global-name
+    matching only) suggested. Worth remembering before reaching for a custom
+    AST-walking script for the next lint-shaped product invariant — an
+    ESLint selector may already cover it.
+- **Follow-ups filed:** none.

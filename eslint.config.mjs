@@ -89,6 +89,29 @@ export default tseslint.config(
     },
   },
 
+  // ── The voice guard (anti-drift safeguard: PRODUCT.md pillar 2) ───────────
+  // Every user-facing string must resolve through the typed t() accessor in
+  // apps/mobile/src/ui/copy/strings.ts, so nothing that reads "Delivery
+  // failed. Retry?" can be typed straight into a screen. A JSX text node
+  // containing a letter is exactly a hardcoded literal. app/_dev is excluded
+  // — it is developer-only screenshot tooling, already kept out of the
+  // production bundle (see M0-08), never shown to a user, and its copy is not
+  // reviewed against docs/PRODUCT.md §5's tone-of-voice table.
+  {
+    files: ['apps/mobile/src/ui/**/*.tsx', 'apps/mobile/app/**/*.tsx'],
+    ignores: ['apps/mobile/app/_dev/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'JSXText[value=/[A-Za-z]/]',
+          message:
+            'No hardcoded copy in JSX. Route user-facing text through t() in apps/mobile/src/ui/copy/strings.ts — see docs/PRODUCT.md §5.',
+        },
+      ],
+    },
+  },
+
   {
     files: ['**/*.test.ts', '**/scripts/**/*.mjs', 'supabase/tests/**/*.ts', 'tests/**/*.ts'],
     languageOptions: {
