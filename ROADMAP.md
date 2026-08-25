@@ -25,7 +25,7 @@ resumes, without implying they belong to any milestone's own goal.
 
 ### [ ] M0-15 — `effectiveSpeedKmh` must never let wind shorten a flight below its calm duration
 
-**Status:** todo · **Size:** S · **Depends on:** none
+**Status:** in-progress · **Size:** S · **Depends on:** none
 **Read first:** `docs/PRODUCT.md` §7 (Passage — "It adds texture and duration;
 it never subtracts."), `packages/flight-sim/src/speed.ts`
 
