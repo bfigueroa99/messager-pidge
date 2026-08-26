@@ -543,7 +543,7 @@ same reason `M0-13`'s gate tests spawn a subprocess).
 
 ### [ ] M1-02 — Share the engine with the Edge Function, and release for real
 
-**Status:** todo · **Size:** M · **Depends on:** M0-05
+**Status:** in-progress · **Size:** M · **Depends on:** M0-05
 **Read first:** `packages/flight-sim/src/plan.ts`, `supabase/migrations/0004_release_and_reaper.sql`
 
 **Why:** ADR-001. The flight math must have exactly one implementation. The
