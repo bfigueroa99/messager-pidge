@@ -156,3 +156,31 @@ it with a new one.
   `playwright install` itself (this container cannot always reach Playwright's
   CDN, and re-downloading ~150 MB per session is wasteful when a build is
   already sitting on disk).
+
+## ADR-010 — `esbuild`, to give the Edge Function one committed copy of the engine
+
+- **Date:** 2026-08-26 · **Iteration:** 14 · **Status:** accepted
+- **Context:** `M1-02`/ADR-001 require the flight math to have exactly one
+  implementation, shared by client, server and tests. `packages/flight-sim` is
+  a pnpm workspace package, which Node and Jest resolve natively — but the
+  release Edge Function runs on Deno, which cannot resolve a pnpm workspace
+  package at deploy time. The engine has to reach Deno as a plain file it can
+  `import` by a relative URL.
+- **Decision:** `esbuild` as a devDependency, driven by
+  `scripts/build-engine.mjs` (`pnpm run build:engine`), bundling
+  `packages/flight-sim/src/index.ts` to a single dependency-free ESM file at
+  `supabase/functions/_shared/flight-sim.js`. The output is committed;
+  `tests/build-engine.test.ts` proves it agrees with the Node package for a
+  golden route, and a CI step regenerates it and fails on `git diff` so it can
+  never drift silently from the source.
+- **Consequences:** Deno gets a real file to import with no new runtime
+  dependency of its own (no npm resolution, no import map). Cost is a second
+  build step to remember to run after touching `packages/flight-sim`, mitigated
+  by the CI check and the `[M1-02]` bundle-vs-source test.
+- **Rejected:** hand-maintaining a second, Deno-flavoured copy of the engine
+  (directly violates ADR-001's "exactly one implementation"); an npm-registry
+  publish of `@pidge/flight-sim` for Deno to fetch by URL (adds a publish step
+  and a network dependency at deploy time for no benefit over a committed
+  file); `deno bundle` (deprecated, and this container has no Deno installed
+  to run it from — `esbuild` runs under plain Node, which this repo already
+  requires).

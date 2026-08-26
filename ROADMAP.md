@@ -541,9 +541,9 @@ same reason `M0-13`'s gate tests spawn a subprocess).
 
 ---
 
-### [ ] M1-02 — Share the engine with the Edge Function, and release for real
+### [x] M1-02 — Share the engine with the Edge Function, and release for real
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-05
+**Status:** done · **Size:** M · **Depends on:** M0-05
 **Read first:** `packages/flight-sim/src/plan.ts`, `supabase/migrations/0004_release_and_reaper.sql`
 
 **Why:** ADR-001. The flight math must have exactly one implementation. The
@@ -566,10 +566,72 @@ Edge Function plans the flight; `release_pigeon` writes it down.
   time. All three are the server's.
 
 **Acceptance criteria:**
-- [ ] the bundled engine returns the same arrival time as the Node engine for LA to NYC
-- [ ] the handler rejects a body longer than 280 characters before touching the database
-- [ ] the handler ignores a client-supplied departure time
-- [ ] the handler resolves the destination from the recipient's stored loft, not from the request
+- [x] the bundled engine returns the same arrival time as the Node engine for LA to NYC
+- [x] the handler rejects a body longer than 280 characters before touching the database
+- [x] the handler ignores a client-supplied departure time
+- [x] the handler resolves the destination from the recipient's stored loft, not from the request
+
+**Touches:** `scripts/build-engine.mjs`, `supabase/functions/_shared/flight-sim.js`
+(generated), `supabase/functions/_shared/package.json` (marks the generated
+bundle as an ES module so Node's loader does not have to sniff it — needed for
+`tests/build-engine.test.ts`'s subprocess import, not requested by the item's
+own `Touches`-less "Do" list but a one-line consequence of it),
+`supabase/functions/release-pigeon/{index,handler,handler.test}.ts`,
+`supabase/functions/tsconfig.json`, `jest.config.js` (a `functions` project),
+`tests/build-engine.test.ts`, `tests/scripts/run-bundled-plan.mjs`,
+`eslint.config.mjs` (ignores the generated bundle; Fetch API globals for
+`supabase/functions/**`), `.github/workflows/ci.yml` (the freshness check),
+`docs/DECISIONS.md` (ADR-010), `package.json` (`esbuild` devDependency,
+`build:engine` script). This item had no `Touches:` line of its own; noted
+per `docs/LOOP.md` §3 rather than guessed at silently.
+
+**Note:** `/code-review --effort high` (self-review, iteration 14) found a
+real gap beyond the four listed criteria: `handleRelease` initially trusted
+`conversationId`/`recipientId` from the request without checking the
+authenticated sender was actually a member of that conversation —
+`release_pigeon` is revoked from `authenticated` precisely so this adapter is
+the one thing standing between a JSON body and a call made with the service
+role (see `supabase/migrations/0006_release_guards.sql`), so this would have
+let any authenticated user forge a flight into a conversation they were never
+part of. Fixed in the same iteration by adding `getConversationMemberIds` and
+requiring both ids to be members before any flight is planned; see
+`docs/JOURNAL.md`.
+
+---
+
+### [ ] M1-10 — Honor "a user's first-ever bird never dies" in the release Edge Function
+
+**Status:** todo · **Size:** S · **Depends on:** M1-02
+**Read first:** `docs/PRODUCT.md` §6 ("First-ever flight: never dies"),
+`packages/flight-sim/src/hazard.ts`, `supabase/functions/release-pigeon/handler.ts`
+
+**Why:** Filed by `/code-review --effort high` during `M1-02` (iteration 14).
+`planFlight`'s `isFirstEverFlight` flag already makes `deathProbability`
+return 0 when set — the pure engine has always honored this invariant — but
+`handleRelease` never computes it and never passes it, so `planFlight`
+defaults to `isFirstEverFlight: false` on every real release. A brand-new
+user's tutorial bird is therefore not actually protected by the one live path
+that releases a bird for real, even though every engine-level test proves the
+mechanism works.
+
+**Do:**
+- Add a `ReleaseDeps` dependency (e.g. `hasEverReleased(userId): Promise<boolean>`)
+  that the handler queries once per release.
+- Pass `isFirstEverFlight: !(await deps.hasEverReleased(senderId))` into
+  `planFlight`'s input.
+- Implement the real dependency in `index.ts` against `flights` (or
+  `pigeons.flights_completed` — pick whichever is correct once a flight from
+  this handler actually exists to query against; `flights.sender_id` is
+  populated at insert time by `release_pigeon` itself, so a `select exists(...)`
+  against it is the direct answer).
+
+**Do NOT:**
+- Do not change `packages/flight-sim`'s hazard model — it already does the
+  right thing when told the truth.
+
+**Acceptance criteria:**
+- [ ] a sender's first call to `handleRelease` passes `isFirstEverFlight: true`
+- [ ] a sender's second call to `handleRelease` passes `isFirstEverFlight: false`
 
 ---
 

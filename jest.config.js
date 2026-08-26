@@ -28,6 +28,19 @@ module.exports = {
         '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/supabase/tests/tsconfig.json' }],
       },
     },
+    {
+      // The Edge Function's business logic (handler.ts) is plain,
+      // runtime-agnostic TypeScript so it can be tested here with a stubbed
+      // Supabase client — see M1-02. index.ts (the Deno bootstrap) is not
+      // covered: it has no logic beyond wiring real dependencies together.
+      displayName: 'functions',
+      preset: 'ts-jest',
+      testEnvironment: 'node',
+      testMatch: ['<rootDir>/supabase/functions/**/*.test.ts'],
+      transform: {
+        '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/supabase/functions/tsconfig.json' }],
+      },
+    },
     '<rootDir>/apps/mobile',
   ],
   // `testTimeout` is a GLOBAL option in a multi-project config — jest-circus

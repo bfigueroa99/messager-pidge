@@ -1198,3 +1198,139 @@ knowledge survives a context reset.
     AST-walking script for the next lint-shaped product invariant — an
     ESLint selector may already cover it.
 - **Follow-ups filed:** none.
+
+---
+
+## Iteration 14 — 2026-08-26 — M1-02
+
+- **Outcome:** done
+- **CI:** run 91 on `8482902` (the previous tip) completed in ~4 seconds via
+  `mcp__github__actions_list` — the same never-scheduled shape Q-003
+  documents (`created_at`/`updated_at` four seconds apart, both `pull_request`
+  and `push` triggers for the same commit). Not this iteration's item.
+- **Selection:** `iteration(14) - last_hardening_iteration(10) = 4 < 5` and
+  `iteration(14) - last_audit_iteration(11) = 3 < 10` — neither override
+  applies. Took the topmost `todo`, `M1-02`, size M, deps (`M0-05`) done.
+- **Verify:** typecheck ok (unchanged — `supabase/functions/**` is not a
+  `tsc -b` project reference; see Surprises) · lint ok · 136 tests ok (+9: 8
+  in the new `functions` Jest project's `handler.test.ts`, 1 in
+  `tests/build-engine.test.ts`) · flight-sim coverage unchanged
+  (99.48%/91.07%, both above threshold — this item touches no engine source,
+  only bundles it) · `gate:roadmap` ok (16 done, 9 pending — `M1-10`, filed
+  this iteration, is the +1) · `gate:tests` ok (floor raised 127 → 136)
+- **What landed:** `scripts/build-engine.mjs` (`pnpm run build:engine`) uses
+  `esbuild` (new devDependency, ADR-010) to bundle `packages/flight-sim/src`
+  to a single dependency-free ESM file, committed at
+  `supabase/functions/_shared/flight-sim.js`. A new CI step
+  (`.github/workflows/ci.yml`) regenerates it and fails on
+  `git diff --exit-code`, so it cannot drift from the source silently — though
+  per Q-003 that check never actually runs here; `tests/build-engine.test.ts`
+  is the one that actually executes under `pnpm run verify`, spawning a `node`
+  subprocess (`tests/scripts/run-bundled-plan.mjs`) to import the real bundle
+  file with a native ESM `import` (the same seam `tests/scripts/lint-fixture.mjs`
+  already works around — `import()` under this repo's CommonJS module target
+  compiles to `require()`, which cannot load an ESM-only file) and comparing
+  its `planFlight` output against `@pidge/flight-sim`'s for LA→NYC.
+  - `supabase/functions/release-pigeon/handler.ts` is the adapter's actual
+    logic, deliberately plain data-in/data-out TypeScript with zero Deno
+    globals — takes an `Authorization` header string, a parsed JSON payload,
+    and a `ReleaseDeps` bag of injected functions, returns a plain
+    `{status, body}`. That shape is what let it run under a new `functions`
+    Jest project (`supabase/functions/tsconfig.json`) with a stubbed
+    `ReleaseDeps` instead of a live Supabase project or a real Deno runtime —
+    neither exists in this container (Q-002).
+    `supabase/functions/release-pigeon/index.ts` is the actual Deno entry
+    point: builds a real `ReleaseDeps` (a service-role `@supabase/supabase-js`
+    client via `npm:` specifier, `Date.now()`, a `crypto.getRandomValues`
+    seed), and turns a real `Request`/`Response` into `handleRelease`'s plain
+    shape.
+  - **`release_pigeon` is revoked from `authenticated`**
+    (`supabase/migrations/0006_release_guards.sql`) — this Edge Function,
+    calling it with the service role key, is the *only* thing that can ever
+    invoke it for real. That makes `handler.ts` a genuine security boundary,
+    not just an adapter: `deps.authenticate` resolves the caller's own id
+    from their JWT via `admin.auth.getUser(jwt)` (verified server-side against
+    GoTrue, not decoded locally) rather than trusting a `senderId` field in
+    the request body, and origin/destination are always the sender's and
+    recipient's own stored lofts (`deps.getLoft`), never the request's
+    `originLat`/`destLat`/etc. fields — all four of `M1-02`'s acceptance
+    criteria and the Do NOT list's "do not let the client supply the origin,
+    the destination, or the departure time" are about exactly this boundary.
+  - `/code-review --effort high` (self-review) found a real gap the four
+    acceptance criteria didn't cover: `handleRelease` checked that the
+    *sender* was authenticated but never checked that the sender and the
+    *recipient* were actually both members of the `conversationId` the
+    request named. Since `release_pigeon` itself does no such check either
+    (it only checks pigeon ownership), any authenticated user could have
+    supplied an arbitrary `conversationId` belonging to two strangers plus
+    any `recipientId` and had a flight inserted into a conversation they were
+    never part of. Fixed in the same iteration: a new `getConversationMemberIds`
+    dependency, checked before any loft is even queried (`403` if either id is
+    missing). Four new tests cover it and the adjacent `pigeonId` validation
+    gap the same review pass found (an empty-string `pigeonId` would have
+    reached `release_pigeon`'s `uuid` parameter unvalidated and surfaced as an
+    opaque `500` instead of the `400` every other malformed-input case
+    already returns) — `index.ts`'s `Deno.serve` callback also gained a
+    `try/catch` so a rejected RPC or malformed JSON returns a clean `500`
+    instead of an unhandled crash.
+  - `isFirstEverFlight` is never computed or passed to `planFlight` —
+    `/code-review` caught this too. The pure engine already does the right
+    thing (`hazard.ts`'s `deathProbability` returns 0 when told), but nothing
+    in this item's "Do" list asked for the query needed to know whether this
+    is a sender's first release, so a real user's tutorial bird is not
+    actually protected by the one live path that releases a bird for real.
+    Filed as `M1-10` rather than silently expanded into this item's scope —
+    `planFlight` already defaults to the safe side (`isFirstEverFlight: false`,
+    i.e. normal risk, never an incorrectly *lowered* risk), so nothing is
+    unsafe today, but a real product guarantee is unenforced until `M1-10`
+    lands.
+  - This item had no `Touches:` line in `ROADMAP.md` at all (unlike every
+    other item read this iteration) — noted per `docs/LOOP.md` §3 rather than
+    guessed at silently, and backfilled onto the item itself once the actual
+    file list was known.
+- **Surprises for the next agent:**
+  - **A file can be part of a Jest project's `tsconfig.json` `include` and
+    still receive zero static verification anywhere `pnpm run verify` runs.**
+    `supabase/functions/release-pigeon/index.ts` is included by
+    `supabase/functions/tsconfig.json`'s `./**/*.ts`, but ts-jest only
+    type-checks whatever a test file actually imports (and this repo's
+    `isolatedModules: true` means even that is a transpile, not a full
+    program check), and `index.ts` is imported by no test — deliberately, since
+    it uses `npm:` specifiers and `.ts`-extension imports that only Deno's
+    resolver understands. `tsc -b` never sees it either (it is not a root
+    `tsconfig.json` project reference, unlike `packages/flight-sim` and
+    `apps/mobile`). The practical consequence: a typo in an RPC parameter
+    name inside `index.ts` (e.g. `p_pigeon_id` → `p_pigeonid`) would pass
+    typecheck, lint and every test in this repository and only surface once
+    deployed to a real Deno runtime against a real Supabase project — which
+    is exactly the gap Q-002 already describes for validating anything
+    Realtime- or auth-shaped. Worth remembering for `M1-10` and any future
+    Edge Function work: keep as much logic as possible in the
+    Jest-verifiable `handler.ts`/`handleRelease` half, and treat `index.ts`
+    as trusted-by-inspection-only, the same trust level this container
+    already gives `.github/workflows/ci.yml` itself.
+  - **`ts-jest`'s dynamic `import()` of a real ESM `.js` file compiles to a
+    `require()` call under this repo's `module: "commonjs"` target, which
+    throws on an ESM-only file.** This is the same seam `M0-13`'s and
+    `M1-01`'s journal entries already documented for `.mjs` config files, but
+    it is worth restating because it generalizes beyond config files: *any*
+    genuine ESM artifact (this iteration's bundled engine included) needs the
+    same subprocess-spawn workaround (`tests/scripts/run-bundled-plan.mjs`),
+    not just files that happen to end in `.mjs`. A `package.json` with
+    `"type": "module"` next to the generated bundle
+    (`supabase/functions/_shared/package.json`) was still worth adding —  it
+    silences a `MODULE_TYPELESS_PACKAGE_JSON` sniffing warning in the
+    subprocess itself and is honest about what the file actually is — but it
+    does not change which side of the CommonJS/ESM seam a *ts-jest* test can
+    reach directly.
+  - **`docs/LOOP.md` §3's "stay inside Touches" guidance has nothing to say
+    when an item has no `Touches:` line at all.** `M1-02` was the first item
+    read this iteration missing one entirely (every other roadmap item does
+    have one). Treated the absence as "underspecified" rather than "drift"
+    per §3's own fork, implemented from the "Do" list instead, and backfilled
+    a `Touches:` line onto the item once real file paths existed, rather than
+    leaving future readers to reconstruct the file list from this journal
+    entry alone.
+- **Follow-ups filed:** `M1-10` (see above, and `ROADMAP.md`) — pass
+  `isFirstEverFlight` into `planFlight` from a real query once this Edge
+  Function has a live project to query against.

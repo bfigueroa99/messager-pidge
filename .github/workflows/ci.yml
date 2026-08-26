@@ -47,6 +47,15 @@ jobs:
       - name: install chromium for playwright
         run: pnpm exec playwright install --with-deps chromium
 
+      # The Edge Function imports a committed esbuild bundle of
+      # packages/flight-sim (ADR-010) because Deno cannot resolve a pnpm
+      # workspace package. Regenerate it and fail on drift, so the bundle can
+      # never silently fall behind the engine it is supposed to mirror.
+      - name: rebuild the shared engine bundle and check it is not stale
+        run: |
+          pnpm run build:engine
+          git diff --exit-code -- supabase/functions/_shared/flight-sim.js
+
       - name: typecheck
         run: pnpm run typecheck
 
