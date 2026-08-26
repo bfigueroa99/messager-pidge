@@ -13,46 +13,33 @@ export const FONT_FAMILIES = {
 export type FontFamilyToken = keyof typeof FONT_FAMILIES;
 
 /** iOS Dynamic Type's "body" size at the default ("Large") content size
- * category. Every other size below is a ratio against this one, so the
- * whole scale moves together the way Dynamic Type expects rather than by
- * independent pixel choices per screen. */
+ * category — named here only so `FONT_SIZES.body` reads as what it is,
+ * not as a base the rest of the scale is computed from. Every other size
+ * below is Apple's own fixed point value for that scale step, not a ratio
+ * against this one; scaling the whole hierarchy together would mean
+ * swapping this literal table for Dynamic Type's live multipliers, not
+ * multiplying by a locally-chosen ratio. */
 const BASE_FONT_SIZE = 17;
 
 /**
- * Ratios against `BASE_FONT_SIZE`, taken from Apple's Dynamic Type scale at
- * the default content size category (Human Interface Guidelines,
- * Typography). `FONT_SIZES` below is these ratios multiplied out — change a
- * ratio here, not a font size there.
+ * Apple's Dynamic Type scale at the default content size category (Human
+ * Interface Guidelines, Typography), point sizes taken directly.
  */
-const DYNAMIC_TYPE_RATIOS = {
-  largeTitle: 34 / BASE_FONT_SIZE,
-  title1: 28 / BASE_FONT_SIZE,
-  title2: 22 / BASE_FONT_SIZE,
-  title3: 20 / BASE_FONT_SIZE,
-  headline: 17 / BASE_FONT_SIZE,
-  body: 17 / BASE_FONT_SIZE,
-  callout: 16 / BASE_FONT_SIZE,
-  subhead: 15 / BASE_FONT_SIZE,
-  footnote: 13 / BASE_FONT_SIZE,
-  caption1: 12 / BASE_FONT_SIZE,
-  caption2: 11 / BASE_FONT_SIZE,
+export const FONT_SIZES = {
+  largeTitle: 34,
+  title1: 28,
+  title2: 22,
+  title3: 20,
+  headline: 17,
+  body: BASE_FONT_SIZE,
+  callout: 16,
+  subhead: 15,
+  footnote: 13,
+  caption1: 12,
+  caption2: 11,
 } as const;
 
-export type TypeScaleToken = keyof typeof DYNAMIC_TYPE_RATIOS;
-
-export const FONT_SIZES: Record<TypeScaleToken, number> = {
-  largeTitle: Math.round(DYNAMIC_TYPE_RATIOS.largeTitle * BASE_FONT_SIZE),
-  title1: Math.round(DYNAMIC_TYPE_RATIOS.title1 * BASE_FONT_SIZE),
-  title2: Math.round(DYNAMIC_TYPE_RATIOS.title2 * BASE_FONT_SIZE),
-  title3: Math.round(DYNAMIC_TYPE_RATIOS.title3 * BASE_FONT_SIZE),
-  headline: Math.round(DYNAMIC_TYPE_RATIOS.headline * BASE_FONT_SIZE),
-  body: Math.round(DYNAMIC_TYPE_RATIOS.body * BASE_FONT_SIZE),
-  callout: Math.round(DYNAMIC_TYPE_RATIOS.callout * BASE_FONT_SIZE),
-  subhead: Math.round(DYNAMIC_TYPE_RATIOS.subhead * BASE_FONT_SIZE),
-  footnote: Math.round(DYNAMIC_TYPE_RATIOS.footnote * BASE_FONT_SIZE),
-  caption1: Math.round(DYNAMIC_TYPE_RATIOS.caption1 * BASE_FONT_SIZE),
-  caption2: Math.round(DYNAMIC_TYPE_RATIOS.caption2 * BASE_FONT_SIZE),
-};
+export type TypeScaleToken = keyof typeof FONT_SIZES;
 
 /** A readable line height for body-length dispatch text. */
 export const LINE_HEIGHT_RATIO = 1.3;

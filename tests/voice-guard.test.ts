@@ -11,72 +11,83 @@ import { join } from 'node:path';
  * This lints against the real, checked-in `eslint.config.mjs` — the same
  * config `pnpm run lint` runs — via `tests/scripts/lint-fixture.mjs`, rather
  * than reimplementing the selector here, so a change to the guard's wording
- * or scope is exercised too, not just trusted by inspection.
+ * or scope is exercised too, not just trusted by inspection. All fixtures are
+ * sent to the script in one batch (one process spawn, one config import)
+ * rather than one process per fixture.
  */
 
 type LintMessage = { ruleId: string | null };
+type Fixture = { code: string; filename: string };
 
 const LINT_FIXTURE_SCRIPT = join(__dirname, 'scripts', 'lint-fixture.mjs');
 
-function lint(code: string, filename: string): LintMessage[] {
-  const output = execFileSync(process.execPath, [LINT_FIXTURE_SCRIPT, filename], {
-    input: code,
+const FIXTURES = {
+  hardcodedLiteral: {
+    code: `
+      import { Text } from 'react-native';
+      export function Bad() {
+        return <Text>Delivery failed. Retry?</Text>;
+      }
+    `,
+    filename: 'apps/mobile/src/ui/Fixture.tsx',
+  },
+  routedThroughT: {
+    code: `
+      import { Text } from 'react-native';
+      import { t } from './copy/strings';
+      export function Good() {
+        return <Text>{t({ key: 'offline' })}</Text>;
+      }
+    `,
+    filename: 'apps/mobile/src/ui/Fixture.tsx',
+  },
+  expressionOnlyChild: {
+    code: `
+      import { Text } from 'react-native';
+      export function Named({ name }: { name: string }) {
+        return <Text>{name}</Text>;
+      }
+    `,
+    filename: 'apps/mobile/src/ui/Fixture.tsx',
+  },
+  devOnlyExempt: {
+    code: `
+      import { Text } from 'react-native';
+      export function DevOnly() {
+        return <Text>Unknown story</Text>;
+      }
+    `,
+    filename: 'apps/mobile/app/_dev/Fixture.tsx',
+  },
+} as const satisfies Record<string, Fixture>;
+
+function lintBatch(fixtures: Record<string, Fixture>): Record<string, LintMessage[]> {
+  const keys = Object.keys(fixtures);
+  const output = execFileSync(process.execPath, [LINT_FIXTURE_SCRIPT], {
+    input: JSON.stringify(keys.map((key) => fixtures[key])),
     encoding: 'utf8',
   });
-  return JSON.parse(output);
+  const results: LintMessage[][] = JSON.parse(output);
+  return Object.fromEntries(keys.map((key, i) => [key, results[i]]));
 }
 
 describe('the voice guard', () => {
+  const results = lintBatch(FIXTURES);
+  const trips = (key: keyof typeof FIXTURES) => results[key].some((m) => m.ruleId === 'no-restricted-syntax');
+
   it('[M1-01] a JSX text node with a hardcoded literal fails the lint test', () => {
-    const messages = lint(
-      `
-        import { Text } from 'react-native';
-        export function Bad() {
-          return <Text>Delivery failed. Retry?</Text>;
-        }
-      `,
-      'apps/mobile/src/ui/Fixture.tsx',
-    );
-    expect(messages.some((m) => m.ruleId === 'no-restricted-syntax')).toBe(true);
+    expect(trips('hardcodedLiteral')).toBe(true);
   });
 
   it('[M1-01] copy routed through t() passes the lint test', () => {
-    const messages = lint(
-      `
-        import { Text } from 'react-native';
-        import { t } from './copy/strings';
-        export function Good() {
-          return <Text>{t({ key: 'offline' })}</Text>;
-        }
-      `,
-      'apps/mobile/src/ui/Fixture.tsx',
-    );
-    expect(messages.some((m) => m.ruleId === 'no-restricted-syntax')).toBe(false);
+    expect(trips('routedThroughT')).toBe(false);
   });
 
   it('[M1-01] an expression-only JSX child never trips the guard', () => {
-    const messages = lint(
-      `
-        import { Text } from 'react-native';
-        export function Named({ name }: { name: string }) {
-          return <Text>{name}</Text>;
-        }
-      `,
-      'apps/mobile/src/ui/Fixture.tsx',
-    );
-    expect(messages.some((m) => m.ruleId === 'no-restricted-syntax')).toBe(false);
+    expect(trips('expressionOnlyChild')).toBe(false);
   });
 
   it('[M1-01] dev-only screenshot tooling under app/_dev is exempt from the guard', () => {
-    const messages = lint(
-      `
-        import { Text } from 'react-native';
-        export function DevOnly() {
-          return <Text>Unknown story</Text>;
-        }
-      `,
-      'apps/mobile/app/_dev/Fixture.tsx',
-    );
-    expect(messages.some((m) => m.ruleId === 'no-restricted-syntax')).toBe(false);
+    expect(trips('devOnlyExempt')).toBe(false);
   });
 });

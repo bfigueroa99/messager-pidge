@@ -29,8 +29,6 @@ export type Copy =
   /** Tone-of-voice table row: "Offline". */
   | { key: 'offline' };
 
-export type StringKey = Copy['key'];
-
 export function t(copy: Copy): string {
   switch (copy.key) {
     case 'sendConfirmed':

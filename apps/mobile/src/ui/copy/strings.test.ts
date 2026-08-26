@@ -1,4 +1,20 @@
-import { t } from './strings';
+import { t, type Copy } from './strings';
+
+/**
+ * One sample per `Copy` variant, reproducing PRODUCT.md §5's own documented
+ * example verbatim. Typed as `{ [K in Copy['key']]: ... }` rather than
+ * `Copy[]` so that adding a variant to `Copy` and forgetting to add its
+ * sample here is a typecheck failure, not a silent gap in the banned-word
+ * sweep below.
+ */
+const SAMPLE_COPY: { [K in Copy['key']]: Extract<Copy, { key: K }> } = {
+  sendConfirmed: { key: 'sendConfirmed', releasedAt: '4:12 PM', dueAt: 'tomorrow, 2:14 PM' },
+  inFlight: { key: 'inFlight', locationNote: 'Over Nebraska', weatherNote: 'Holding against a headwind' },
+  arrival: { key: 'arrival', senderName: 'Ana' },
+  death: { key: 'death', birdName: 'Wren', place: 'Altoona, Pennsylvania', time: '11:41 PM' },
+  loftEmpty: { key: 'loftEmpty', birdName: 'Sparrow', dueAt: '6:20 AM' },
+  offline: { key: 'offline' },
+};
 
 /**
  * `[M1-01]` — the copy catalogue must say exactly what
@@ -7,35 +23,20 @@ import { t } from './strings';
  */
 describe('the copy catalogue', () => {
   it('[M1-01] strings.ts has a key for every row of the tone-of-voice table', () => {
-    // One call per row of PRODUCT.md §5, reproducing that row's own example
-    // verbatim from its documented inputs — this is the coverage check and
-    // the fidelity check at once.
-    expect(t({ key: 'sendConfirmed', releasedAt: '4:12 PM', dueAt: 'tomorrow, 2:14 PM' })).toBe(
-      'Released 4:12 PM. Due tomorrow, 2:14 PM.',
+    // This is the coverage check and the fidelity check at once.
+    expect(t(SAMPLE_COPY.sendConfirmed)).toBe('Released 4:12 PM. Due tomorrow, 2:14 PM.');
+    expect(t(SAMPLE_COPY.inFlight)).toBe('Over Nebraska. Holding against a headwind.');
+    expect(t(SAMPLE_COPY.arrival)).toBe('A pigeon has arrived from Ana.');
+    expect(t(SAMPLE_COPY.death)).toBe(
+      'Wren did not arrive. Taken near Altoona, Pennsylvania, at 11:41 PM. The note was not recovered.',
     );
-    expect(t({ key: 'inFlight', locationNote: 'Over Nebraska', weatherNote: 'Holding against a headwind' })).toBe(
-      'Over Nebraska. Holding against a headwind.',
-    );
-    expect(t({ key: 'arrival', senderName: 'Ana' })).toBe('A pigeon has arrived from Ana.');
-    expect(
-      t({ key: 'death', birdName: 'Wren', place: 'Altoona, Pennsylvania', time: '11:41 PM' }),
-    ).toBe('Wren did not arrive. Taken near Altoona, Pennsylvania, at 11:41 PM. The note was not recovered.');
-    expect(t({ key: 'loftEmpty', birdName: 'Sparrow', dueAt: '6:20 AM' })).toBe(
-      'The loft is empty. Sparrow is due home at 6:20 AM.',
-    );
-    expect(t({ key: 'offline' })).toBe('The loft cannot be reached.');
+    expect(t(SAMPLE_COPY.loftEmpty)).toBe('The loft is empty. Sparrow is due home at 6:20 AM.');
+    expect(t(SAMPLE_COPY.offline)).toBe('The loft cannot be reached.');
   });
 
   it('[M1-01] no string contains an exclamation point, "failed", "error", "retry" or "sent"', () => {
     const banned = ['!', 'failed', 'error', 'retry', 'sent'];
-    const samples = [
-      t({ key: 'sendConfirmed', releasedAt: '4:12 PM', dueAt: 'tomorrow, 2:14 PM' }),
-      t({ key: 'inFlight', locationNote: 'Over Nebraska', weatherNote: 'Holding against a headwind' }),
-      t({ key: 'arrival', senderName: 'Ana' }),
-      t({ key: 'death', birdName: 'Wren', place: 'Altoona, Pennsylvania', time: '11:41 PM' }),
-      t({ key: 'loftEmpty', birdName: 'Sparrow', dueAt: '6:20 AM' }),
-      t({ key: 'offline' }),
-    ];
+    const samples = Object.values(SAMPLE_COPY).map((copy) => t(copy));
 
     for (const sample of samples) {
       const lower = sample.toLowerCase();

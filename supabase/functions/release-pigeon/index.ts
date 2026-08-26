@@ -115,9 +115,12 @@ Deno.serve(async (req: Request) => {
   } catch {
     // Malformed JSON, or a dependency (release_pigeon's RPC, most likely)
     // rejecting an input handleRelease's own checks let through — e.g. a
-    // pigeonId that is a non-empty string but not a valid uuid. Either way
-    // this must not leak the underlying error text to the caller.
-    return new Response(JSON.stringify({ error: 'the loft could not be reached' }), {
+    // pigeonId that is a non-empty string but not a valid uuid. This
+    // boundary covers several unrelated failure classes, so its message
+    // stays generic rather than naming one of them (a loft, specifically)
+    // as though it were the cause every time it fires. Either way this must
+    // not leak the underlying error text to the caller.
+    return new Response(JSON.stringify({ error: 'the release could not be completed' }), {
       status: 500,
       headers: { 'content-type': 'application/json' },
     });
