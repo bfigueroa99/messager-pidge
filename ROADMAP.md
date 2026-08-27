@@ -637,7 +637,7 @@ mechanism works.
 
 ### [ ] M1-03 — Cities dataset and the loft picker
 
-**Status:** todo · **Size:** M · **Depends on:** M0-07, M1-01
+**Status:** in-progress · **Size:** M · **Depends on:** M0-07, M1-01
 **Read first:** `docs/PRODUCT.md` §9, `supabase/migrations/0001_init.sql`
 
 **Why:** INV-7. Choosing a city is offered *first*, before any location
