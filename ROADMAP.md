@@ -601,7 +601,7 @@ requiring both ids to be members before any flight is planned; see
 
 ### [ ] M1-10 — Honor "a user's first-ever bird never dies" in the release Edge Function
 
-**Status:** todo · **Size:** S · **Depends on:** M1-02
+**Status:** in-progress · **Size:** S · **Depends on:** M1-02
 **Read first:** `docs/PRODUCT.md` §6 ("First-ever flight: never dies"),
 `packages/flight-sim/src/hazard.ts`, `supabase/functions/release-pigeon/handler.ts`
 
