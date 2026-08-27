@@ -635,10 +635,14 @@ mechanism works.
 
 ---
 
-### [ ] M1-03 — Cities dataset and the loft picker
+### [x] M1-03 — Cities dataset and the loft picker
 
-**Status:** in-progress · **Size:** M · **Depends on:** M0-07, M1-01
+**Status:** done · **Size:** M · **Depends on:** M0-07, M1-01
 **Read first:** `docs/PRODUCT.md` §9, `supabase/migrations/0001_init.sql`
+**Touches:** `apps/mobile/src/data/`, `apps/mobile/src/ui/screens/LoftPicker.tsx`,
+`apps/mobile/app/loft-picker.tsx`, `apps/mobile/src/ui/copy/strings.ts`,
+`scripts/generate-cities-seed.mjs`, `supabase/migrations/0009_seed_cities.sql`,
+`tests/cities-seed.test.ts`, `supabase/tests/rls/city-seed.test.ts`
 
 **Why:** INV-7. Choosing a city is offered *first*, before any location
 permission, which makes the app fully testable in CI and fully usable by someone
@@ -656,10 +660,30 @@ who will not grant location.
 - Do not store anything more precise than what the trigger returns.
 
 **Acceptance criteria:**
-- [ ] searching "Los Ang" surfaces Los Angeles within the first three results
-- [ ] selecting a city stores the centroid, not the query
-- [ ] the picker works with no network and no permissions granted
-- [ ] the screen's copy contains no in-fiction language
+- [x] searching "Los Ang" surfaces Los Angeles within the first three results
+- [x] selecting a city stores the centroid, not the query
+- [x] the picker works with no network and no permissions granted
+- [x] the screen's copy contains no in-fiction language
+
+**Resolution note:** "Bundle a GeoNames subset ... ~1 MB" assumed network
+access to fetch one; this container has none (`.claude/settings.json` denies
+`curl`/`wget` on purpose — LOOP.md's own preamble). Shipped a curated,
+real-world subset instead: 130 real cities (id, name, admin1, country code,
+lat/lon, population), hand-picked for global spread, generated to both
+`apps/mobile/src/data/cities.json` (source of truth) and
+`supabase/migrations/0009_seed_cities.sql` (`pnpm run seed:cities`,
+drift-checked by `tests/cities-seed.test.ts`, the same pattern `M1-02`'s
+`build:engine` established). Real GeoNames data can replace it in place later
+without touching any consumer — both the seed migration and the client search
+index derive from the one JSON file. Also: "a searchable picker screen
+writing to `profiles.home_lat/home_lon`" reads as a real Supabase write, but
+no Supabase client exists in the mobile app yet and no live project exists to
+test one against (Q-002) — the screen calls an injected `LoftPickerDeps.saveLoft`
+contract instead (mirrors `M1-02`'s `ReleaseDeps` pattern), and
+`app/loft-picker.tsx` wires a placeholder real implementation that always
+fails with the same `t({key:'offline'})` copy a real network failure would
+show. Filed `M1-11` to replace it with a real client once `M1-02`'s pattern
+extends to the mobile app.
 
 ---
 
@@ -809,3 +833,35 @@ plays a full LA→NYC flight in under a minute; a recording checklist.
 - [ ] with the scale at 1440 a 22-hour flight completes in 55 ± 2 seconds
 - [ ] the scale is ignored unless the E2E flag is set
 - [ ] the seeded script produces the same fate on every run
+
+---
+
+### [ ] M1-11 — Wire a real Supabase client into the mobile app
+
+**Status:** blocked · **Size:** M · **Depends on:** M1-02 · **Blocked by:** Q-002
+
+**Why:** Filed by `M1-03` (iteration 17). The loft picker screen calls an
+injected `LoftPickerDeps.saveLoft(city)` contract rather than a real Supabase
+write, because no `@supabase/supabase-js` client exists anywhere in
+`apps/mobile` yet — `M1-02` only added one to the Edge Function, a different
+runtime — and there is no live Supabase project to test one against (Q-002).
+`app/loft-picker.tsx`'s real implementation always rejects today, so every
+save shows the same `t({key:'offline'})` copy a genuine network failure would.
+Every future screen that reads or writes real data (M1-06 onward) will hit
+this same gap.
+
+**Do:**
+- Add `@supabase/supabase-js` to `apps/mobile` (ADR required — new runtime
+  dependency) and a thin client factory reading `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+  from Expo config, matching how `index.ts`'s service-role client is built.
+- Real auth session handling (sign in, session persistence) — scope this
+  precisely once written; it may itself be too large for one item.
+- Replace `apps/mobile/src/data/loft-picker-deps.ts`'s placeholder with a real
+  `saveLoft` that upserts `profiles.home_lat`/`home_lon`.
+
+**Do NOT:**
+- Do not stub a fake Supabase client that "succeeds" without a real project —
+  that would be strictly worse than today's honest failure.
+
+**Acceptance criteria:**
+- [ ] blocked on Q-002 — no live project or credentials exist to test against

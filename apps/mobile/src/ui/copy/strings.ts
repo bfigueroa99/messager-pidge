@@ -27,7 +27,14 @@ export type Copy =
   /** Tone-of-voice table row: "Loft empty". */
   | { key: 'loftEmpty'; birdName: string; dueAt: string }
   /** Tone-of-voice table row: "Offline". */
-  | { key: 'offline' };
+  | { key: 'offline' }
+  /** Loft picker screen (M1-03). Location is account/privacy-adjacent — the
+   * consent-boundary exception in §5 applies, so this and the two variants
+   * below are plain, literal English, not in-fiction copy. */
+  | { key: 'loftPickerTitle' }
+  | { key: 'loftPickerSearchLabel' }
+  | { key: 'loftPickerNoResults' }
+  | { key: 'loftPickerPrivacyNote' };
 
 export function t(copy: Copy): string {
   switch (copy.key) {
@@ -43,5 +50,13 @@ export function t(copy: Copy): string {
       return `The loft is empty. ${copy.birdName} is due home at ${copy.dueAt}.`;
     case 'offline':
       return 'The loft cannot be reached.';
+    case 'loftPickerTitle':
+      return 'Set your home location';
+    case 'loftPickerSearchLabel':
+      return 'Search for a city';
+    case 'loftPickerNoResults':
+      return 'No matching cities.';
+    case 'loftPickerPrivacyNote':
+      return 'Only the city you select is stored, never your exact location. You can set this to any city, not necessarily where you live.';
   }
 }

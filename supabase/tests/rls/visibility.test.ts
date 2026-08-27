@@ -333,6 +333,12 @@ describe('location is coarsened by the database, not the UI', () => {
 
   beforeEach(async () => {
     db = await freshDb();
+    // 0009_seed_cities.sql (M1-03) now seeds ~130 real cities, including its
+    // own real Los Angeles row — clear it first so this test's own 'la'
+    // fixture (the specific id it asserts against below) is the only
+    // candidate at this coordinate, not a coin flip between two rows at an
+    // identical distance.
+    await db.query('delete from cities');
     await db.query(
       `insert into cities (id, name, admin1, country_code, lat, lon, population)
        values ('la','Los Angeles','CA','US',34.0522,-118.2437,3898747),

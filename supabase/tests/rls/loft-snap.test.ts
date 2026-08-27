@@ -12,6 +12,14 @@ describe('the loft snap picks the nearest city by ground distance', () => {
 
   beforeEach(async () => {
     db = await freshDb();
+    // This file tests the nearest-neighbor algorithm itself against small,
+    // controlled city sets — 0009_seed_cities.sql (M1-03) now seeds ~130 real
+    // cities into every fresh database, which would otherwise compete with
+    // (or, for the "no city matches" case, outright contradict) each test's
+    // own deliberately placed fixtures. Clearing the table isolates the
+    // algorithm under test from whatever the real seed data happens to
+    // contain.
+    await db.query('delete from cities');
   });
 
   afterEach(async () => {

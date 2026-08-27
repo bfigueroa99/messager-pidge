@@ -14,6 +14,10 @@ const SAMPLE_COPY: { [K in Copy['key']]: Extract<Copy, { key: K }> } = {
   death: { key: 'death', birdName: 'Wren', place: 'Altoona, Pennsylvania', time: '11:41 PM' },
   loftEmpty: { key: 'loftEmpty', birdName: 'Sparrow', dueAt: '6:20 AM' },
   offline: { key: 'offline' },
+  loftPickerTitle: { key: 'loftPickerTitle' },
+  loftPickerSearchLabel: { key: 'loftPickerSearchLabel' },
+  loftPickerNoResults: { key: 'loftPickerNoResults' },
+  loftPickerPrivacyNote: { key: 'loftPickerPrivacyNote' },
 };
 
 /**
@@ -32,6 +36,32 @@ describe('the copy catalogue', () => {
     );
     expect(t(SAMPLE_COPY.loftEmpty)).toBe('The loft is empty. Sparrow is due home at 6:20 AM.');
     expect(t(SAMPLE_COPY.offline)).toBe('The loft cannot be reached.');
+    expect(t(SAMPLE_COPY.loftPickerTitle)).toBe('Set your home location');
+    expect(t(SAMPLE_COPY.loftPickerSearchLabel)).toBe('Search for a city');
+    expect(t(SAMPLE_COPY.loftPickerNoResults)).toBe('No matching cities.');
+    expect(t(SAMPLE_COPY.loftPickerPrivacyNote)).toBe(
+      'Only the city you select is stored, never your exact location. You can set this to any city, not necessarily where you live.',
+    );
+  });
+
+  it('[M1-03] the loft picker copy contains no in-fiction language', () => {
+    // The picker is location/privacy-adjacent — PRODUCT.md §5's
+    // consent-boundary exception applies, so unlike every other row this
+    // copy must NOT sound like the rest of the app.
+    const inFiction = ['pigeon', 'bird', 'loft is', 'flew', 'flight', 'wing', '🕊'];
+    const samples = [
+      t(SAMPLE_COPY.loftPickerTitle),
+      t(SAMPLE_COPY.loftPickerSearchLabel),
+      t(SAMPLE_COPY.loftPickerNoResults),
+      t(SAMPLE_COPY.loftPickerPrivacyNote),
+    ];
+
+    for (const sample of samples) {
+      const lower = sample.toLowerCase();
+      for (const word of inFiction) {
+        expect(lower).not.toContain(word);
+      }
+    }
   });
 
   it('[M1-01] no string contains an exclamation point, "failed", "error", "retry" or "sent"', () => {
