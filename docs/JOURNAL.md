@@ -1444,3 +1444,75 @@ knowledge survives a context reset.
   `lint-fixture.mjs` and `run-bundled-plan.mjs` was looked at and
   deliberately left as-is (see above) rather than filed — it is a
   three-line function, not a gap in product coverage.
+
+---
+
+## Iteration 16 — 2026-08-27 — M1-10
+
+- **Outcome:** done
+- **CI:** runs 96–99 on the previous tip (`3c2616f`, `3377125`) all completed
+  in 3–7 seconds via `mcp__github__actions_list`/`get_job_logs`, with a 404 on
+  log content — the same never-scheduled shape Q-003 documents. Not this
+  iteration's item.
+- **Selection:** `iteration(16) - last_hardening_iteration(15) = 1 < 5` and
+  `iteration(16) - last_audit_iteration(11) = 5 < 10` — neither override
+  applies. Took the topmost `todo`, `M1-10`, size S, dep (`M1-02`) done.
+- **Verify:** typecheck ok · lint ok · 138 tests ok (+2, both in
+  `handler.test.ts`) · flight-sim coverage unchanged (99.48%/91.07%, both
+  above threshold — this item touches no engine source) · `gate:roadmap` ok
+  (17 done, 8 pending) · `gate:tests` ok (floor raised 136 → 138)
+- **What landed:** `ReleaseDeps` gained `hasEverReleased(userId):
+  Promise<boolean>`. `handleRelease` now computes
+  `isFirstEverFlight = !hasEverReleased` and passes it into `planFlight`'s
+  input, folded into the same `Promise.all` as the two `getLoft` calls (all
+  three depend only on ids already known by that point, so there is no
+  reason to pay for a fourth sequential round-trip). `index.ts`'s real
+  implementation queries `flights` with `select('id', {count: 'exact', head:
+  true}).eq('sender_id', userId)` — a `head: true` count query, no rows
+  actually fetched. Two new tests in `handler.test.ts`, one per acceptance
+  criterion, both spying on the `PlanInput` the stub `planFlight` receives.
+  - `/code-review --effort high` (self-review) found three issues, two real:
+    1. **Fixed.** `hasEverReleased`'s first draft returned `false` on any
+       query error, which flips `isFirstEverFlight` to `true` and grants a
+       returning user's flight death-immunity on nothing worse than a
+       transient network hiccup — the exact opposite of the safe default
+       `M1-02`'s deleted comment was careful to preserve ("a flight that
+       should never die still can't"; the reverse is not true). Fixed to
+       return `true` (i.e. "assume already released") on error, matching the
+       fail-closed pattern `getLoft`/`getConversationMemberIds` already use
+       elsewhere in the same file, just inverted for this one boolean's
+       safe direction.
+    2. **Fixed.** `hasEverReleased(senderId)` was awaited strictly after the
+       loft `Promise.all` even though it has no dependency on either loft
+       result — folded into the same `Promise.all`, removing one full
+       sequential round-trip from every release.
+    3. **Noted, not fixed.** A genuine TOCTOU race: `hasEverReleased` reads
+       before `release_pigeon` inserts, with nothing locking the two
+       together by `sender_id` (the existing `for update` lock in
+       `0006_release_guards.sql` is per-pigeon, and does nothing when
+       `pigeonId` is null). A user releasing two birds in the same
+       instant — double-tap, two devices, a client retry racing the first
+       response — could get both treated as their first-ever flight. Left
+       as-is: the race is narrow (needs two releases within one query's
+       latency), its direction is benign (extra immunity, never extra risk,
+       so INV-2/INV-4 are not at stake), and a correct fix means either a
+       sender-scoped advisory lock or moving the check inside
+       `release_pigeon`'s own transaction — both bigger than this S-sized
+       item's `ReleaseDeps`-only scope. Recorded here rather than filed as a
+       new roadmap item, since PRODUCT.md §6 does not commit to "exactly
+       one" immune flight ever, only that the first one must not die.
+- **Surprises for the next agent:**
+  - **A boolean dependency's fail-closed direction is not always "return
+    false."** `getLoft`/`getConversationMemberIds` fail closed by returning
+    an empty/absent result, which happens to read as `false`-ish in their
+    callers. `hasEverReleased` is the first dependency in this file where
+    the safe default on error is `true`, because the invariant it feeds
+    (`isFirstEverFlight = !hasEverReleased`) is inverted from what the
+    boolean's name suggests. Worth checking explicitly, not by analogy to
+    the pattern already in the file, the next time a new `ReleaseDeps`
+    dependency needs an error default.
+- **Follow-ups filed:** none. The TOCTOU race above was evaluated and
+  deliberately left unfiled (see above) — narrow, benign-direction, and
+  disproportionate to fix at this item's size. Worth a second look if a
+  future item ever needs `release_pigeon` to enforce something per-sender
+  rather than per-pigeon, since that work would fix this for free.

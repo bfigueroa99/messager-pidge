@@ -72,6 +72,19 @@ const deps: ReleaseDeps = {
     return data.map((row: { user_id: string }) => row.user_id);
   },
 
+  async hasEverReleased(userId) {
+    // On a query error, fail toward the safe side of the invariant: treat the
+    // user as already having released, so `isFirstEverFlight` comes out
+    // `false` (normal risk) rather than incorrectly granting death-immunity.
+    // A flight that should never die still can't; the reverse is not true.
+    const { count, error } = await admin
+      .from('flights')
+      .select('id', { count: 'exact', head: true })
+      .eq('sender_id', userId);
+    if (error || count === null) return true;
+    return count > 0;
+  },
+
   async releasePigeon(args: ReleaseArgs) {
     const { plan } = args;
     const { data, error } = await admin.rpc('release_pigeon', {

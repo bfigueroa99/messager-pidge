@@ -67,6 +67,13 @@ export interface ReleaseDeps {
    * conversation, or to a recipient, they have no relationship to at all.
    */
   readonly getConversationMemberIds: (conversationId: string) => Promise<readonly string[]>;
+  /**
+   * Whether this user has ever released a bird before. PRODUCT.md §6: a
+   * user's first-ever flight never dies — `planFlight` already honors
+   * `isFirstEverFlight` (see `packages/flight-sim/src/hazard.ts`), this is
+   * the query that tells it the truth. See M1-10.
+   */
+  readonly hasEverReleased: (userId: string) => Promise<boolean>;
   /** Writes the flight down via the `release_pigeon` RPC. */
   readonly releasePigeon: (args: ReleaseArgs) => Promise<{ readonly flightId: string }>;
 }
@@ -112,9 +119,10 @@ export async function handleRelease(
     return { status: 403, body: { error: 'sender and recipient must both belong to the conversation' } };
   }
 
-  const [origin, destination] = await Promise.all([
+  const [origin, destination, hasEverReleased] = await Promise.all([
     deps.getLoft(senderId),
     deps.getLoft(payload.recipientId),
+    deps.hasEverReleased(senderId),
   ]);
   if (origin === null) {
     return { status: 422, body: { error: 'sender has not set a loft' } };
@@ -125,19 +133,14 @@ export async function handleRelease(
 
   // The server owns the clock and the seed; nothing in `payload` reaches
   // `planFlight` beyond the note text and the two ids already validated above.
-  //
-  // `isFirstEverFlight` is deliberately not set here — computing "has this
-  // sender ever released before" needs a query this item's Do list never
-  // asked for, and `planFlight` already defaults it to `false` (the safe
-  // side: a flight that should never die still can't). Filed as M1-10 so a
-  // real user's tutorial bird is not silently exposed to risk PRODUCT.md §6
-  // says it must never carry.
+  const isFirstEverFlight = !hasEverReleased;
   const seed = deps.generateSeed();
   const plan = deps.planFlight({
     origin,
     destination,
     departsAtMs: deps.now(),
     seed,
+    isFirstEverFlight,
   });
 
   const { flightId } = await deps.releasePigeon({

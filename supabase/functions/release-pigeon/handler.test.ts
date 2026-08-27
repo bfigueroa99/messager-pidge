@@ -45,6 +45,7 @@ function makeDeps(overrides: Partial<ReleaseDeps> = {}): ReleaseDeps {
     authenticate: async () => 'sender-1',
     getLoft: async (userId: string) => (userId === 'sender-1' ? SENDER_LOFT : RECIPIENT_LOFT),
     getConversationMemberIds: async () => ['sender-1', 'recipient-1'],
+    hasEverReleased: async () => false,
     releasePigeon: async () => ({ flightId: 'flight-1' }),
     ...overrides,
   };
@@ -159,6 +160,36 @@ describe('handleRelease', () => {
     const result = await handleRelease('Bearer sender-1-token', BASE_PAYLOAD, deps);
 
     expect(result.status).toBe(403);
+  });
+
+  it('[M1-10] a sender\'s first call to handleRelease passes isFirstEverFlight: true', async () => {
+    let seenInput: PlanInput | null = null;
+    const deps = makeDeps({
+      hasEverReleased: async () => false,
+      planFlight: (input: PlanInput) => {
+        seenInput = input;
+        return stubPlan(input);
+      },
+    });
+
+    await handleRelease('Bearer sender-1-token', BASE_PAYLOAD, deps);
+
+    expect(seenInput?.isFirstEverFlight).toBe(true);
+  });
+
+  it('[M1-10] a sender\'s second call to handleRelease passes isFirstEverFlight: false', async () => {
+    let seenInput: PlanInput | null = null;
+    const deps = makeDeps({
+      hasEverReleased: async () => true,
+      planFlight: (input: PlanInput) => {
+        seenInput = input;
+        return stubPlan(input);
+      },
+    });
+
+    await handleRelease('Bearer sender-1-token', BASE_PAYLOAD, deps);
+
+    expect(seenInput?.isFirstEverFlight).toBe(false);
   });
 
   it('[M1-02] the handler rejects an empty-string pigeonId before touching the database', async () => {
