@@ -1726,3 +1726,108 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. `M1-06` (already on the roadmap) is the real
   test of the interval-identity fix once a frame-loop-driven parent exists;
   no new gap to file beyond what that item already covers.
+
+---
+
+## Iteration 19 — 2026-08-29 — M1-05 split
+
+- **Outcome:** done (a split, not a feature — see below)
+- **CI:** run 111/110 on the previous tip (`3eba26d`) completed in ~2–3
+  seconds via `mcp__github__actions_list`/`list_workflow_jobs` — the job has
+  no `runner_id`/`runner_name` at all, the same never-scheduled shape Q-003
+  documents. Not this iteration's item.
+- **Selection:** `iteration(19) - last_hardening_iteration(15) = 4 < 5` and
+  `iteration(19) - last_audit_iteration(11) = 8 < 10` — neither override
+  applies. Topmost `todo` with deps done was `M1-05`, size `L` — the size
+  override in `docs/LOOP.md` §2 fires: split it, and the split *is* the
+  iteration.
+- **Verify:** typecheck ok · lint ok · 162 tests ok (unchanged — a roadmap
+  edit adds no test) · flight-sim coverage unchanged (99.48%/91.07%, both
+  above threshold) · `gate:roadmap` ok (20 done, 9 pending — was 6 pending
+  before the split; the one `L` item became three, net +3) · `gate:tests` ok
+  (floor unchanged at 162)
+- **What landed:** `M1-05` ("The chart: decide the renderer and draw the
+  route") replaced by three items, in dependency order:
+  - **`M1-12`** (S) — a pure `packages/flight-sim/src/project.ts` turning
+    `arcSegments()`'s lat/lon segments into screen-space points fit to a
+    viewport with a consistent padding ratio, never merging segments across
+    the antimeridian split. Renderer-agnostic: whichever of `expo-maps` or an
+    SVG chart `M1-13` picks, both would consume the same projected points.
+    Carries three of the original item's four acceptance criteria (the
+    Tokyo→LA no-streak check, the LA→NYC bow-direction check, and the
+    padding-ratio-at-any-distance check) — all three are pure geometry with
+    no dependency on a rendering decision.
+  - **`M1-13`** (M) — the actual renderer decision: evaluate `expo-maps`
+    against a bundled SVG chart, record it as an update to ADR-007
+    (`docs/DECISIONS.md`, currently `proposed`), then build
+    `MapCanvas.{ios,android,web}.tsx` behind one `FlightMap` component
+    drawing the full route (still solid, no flown/dashed split yet) from
+    `M1-12`'s points, wired into an `M0-08` screenshot story. Carries the
+    original item's fourth criterion (byte-identical consecutive
+    frozen-clock screenshots) plus a component-level re-check of the
+    no-streak property (proving the *real* component preserves what
+    `M1-12`'s pure function already proves in isolation).
+  - **`M1-14`** (S) — splits each rendered segment at the flight's current
+    progress into a solid "flown" prefix and dashed "remaining" suffix, per
+    `PRODUCT.md` §7's "wind adds texture and duration, chart shows true
+    position" spirit and the original item's own "Do" line. Depends on
+    `M1-13`.
+  - `M1-06`'s `Depends on` line updated from `M1-05` to `M1-14` (the last of
+    the three, since that's the point at which `FlightMap` is feature-complete
+    enough for the flight screen to consume it).
+  - `M0-07`'s old "Do NOT... that is `M1-05`" cross-reference (already `done`,
+    so left otherwise untouched) updated to point at `M1-13`, the item that
+    now actually makes that decision.
+  - `M1-05` itself: kept as a heading (never delete a `done`-adjacent item —
+    ROADMAP.md's own header says never delete a `done` item, and this one's
+    history is worth keeping too), checkbox left unticked, status set to
+    `split` rather than `done`. See Surprises below for why `done` was not an
+    option here.
+- **Surprises for the next agent:**
+  - **`gate:roadmap` requires a `done` item's own literal ID to appear in a
+    test name — a split item can never satisfy that, because by design no
+    code ever lands under the retired parent ID.** The natural instinct after
+    finishing a split is to mark the split-away item `done` (the work *is*
+    done, in the sense that nothing about it remains to do under that ID),
+    but `check-roadmap-tests.mjs` would then fail the very next `verify` with
+    "`M1-05` is marked done but no test name contains `[M1-05]`" — forever,
+    since `M1-12`/`M1-13`/`M1-14` will only ever produce tests tagged with
+    *their own* IDs. Used a new non-enum status, `split` (the roadmap header
+    only documents `todo`/`in-progress`/`blocked`/`done`, but `blocked` is
+    already an established precedent for a fifth ad-hoc status living outside
+    that list — see `M1-11`), which reads as "not todo" to the selection rule
+    (so it can never be reselected) without lying about test coverage that
+    will never exist. Worth reusing verbatim the next time an `L` item's split
+    needs to record what happened to the parent heading.
+  - **An item ID with a letter suffix (`M1-05a`, `M1-05b`, `M1-05c`) silently
+    defeats `check-roadmap-tests.mjs`'s own heading regex,
+    `^### \[([ x])\]\s+([A-Z]\d+-\d+)\s+—\s+(.+)$` — it requires the ID to be
+    exactly letter+digits-digits with nothing else before the em dash, so a
+    trailing letter makes the whole heading line invisible to the gate.**
+    This is not a loud failure: the gate just never sees the item at all, so
+    it would never be checked for done/test-coverage agreement no matter what
+    its status or checkbox said later — the one thing this loop's whole
+    protocol depends on (a checkbox can't lie) would have quietly stopped
+    applying to that item forever. Caught by inspecting the regex directly in
+    `scripts/check-roadmap-tests.mjs` before committing, not by running
+    `verify` first — the gate script would have said nothing wrong, since an
+    invisible item produces neither an error nor evidence either way. Tried
+    the lettered-suffix scheme first (it reads naturally next to the parent
+    ID) and renamed to plain next-available numeric IDs (`M1-12`/`13`/`14`)
+    once this was found. **Worth checking any new roadmap item ID against
+    that exact regex before writing it down, not just against what looks
+    readable** — a scheme that reads fine to a person can be invisible to the
+    one script whose entire job is reading it.
+  - **A size-`L` item's own acceptance criteria can usually be partitioned
+    cleanly along "what's testable without a rendering decision" vs. "what
+    requires one," which is a decent general heuristic for splitting a UI
+    item that starts with a research/ADR step.** Here it fell out naturally:
+    three of four criteria (streak-free segments, bow direction, padding
+    ratio) are pure geometry, provable in Jest with no renderer at all, while
+    the fourth (byte-identical screenshots) can only be proven once something
+    real is drawn. Worth reaching for this split again for `M1-06` when it
+    comes up for its own mandatory split (frame-loop marker math vs. gesture
+    handling vs. cold-start/backgrounding correctness look like the same kind
+    of seam).
+- **Follow-ups filed:** none — `M1-12`, `M1-13`, `M1-14` are the follow-ups,
+  already recorded on `ROADMAP.md` in full above.

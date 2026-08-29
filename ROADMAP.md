@@ -260,7 +260,7 @@ later.
   references.
 
 **Do NOT:**
-- Do not add a map library — that is `M1-05`, and the choice is still open
+- Do not add a map library — that is `M1-13`, and the choice is still open
   (ADR-007).
 - Do not add navigation beyond the single index route.
 - Do not add Supabase client code — that is `M1-02`.
@@ -715,36 +715,139 @@ as place names. Text ticks at 1 Hz so the numbers do not jitter.
 
 ### [ ] M1-05 — The chart: decide the renderer and draw the route
 
-**Status:** in-progress · **Size:** L (**split this before starting**)
+**Status:** split · **Size:** L
 **Depends on:** M0-08, M0-02
-**Read first:** `docs/DECISIONS.md` ADR-007, `packages/flight-sim/src/geo.ts`
 
 **Why:** The map is the product. This is also the item that resolves ADR-007
 from "proposed" to "accepted" or replaces it.
 
-**Do:** evaluate `expo-maps` against a bundled-vector-SVG chart on: dashed
-polyline support, New Architecture compatibility, web rendering for screenshots,
-API keys, and offline behaviour. Record the outcome as an ADR. Then implement
-`MapCanvas.{ios,android,web}.tsx` behind one `FlightMap` component, drawing the
-route from `arcSegments()` with the flown portion solid and the rest dashed.
+**Resolution note:** too large to start as one item, per `docs/LOOP.md` §2's
+override table. Split (iteration 19) into `M1-12`, `M1-13` and `M1-14`
+below — geometry, renderer decision + static draw, and the flown/dashed split,
+in that order. Each carries its own share of the four acceptance criteria
+originally listed here. `M1-06`'s "Depends on" now points at `M1-14`, the
+last of the three.
+
+---
+
+### [ ] M1-12 — Route projection: fit-to-bounds screen coordinates
+
+**Status:** todo · **Size:** S · **Depends on:** M0-02
+**Read first:** `packages/flight-sim/src/geo.ts` (`arcSegments`,
+`splitAtAntimeridian`)
+
+**Why:** Split from `M1-05` (see its resolution note) because it was too large
+to start as one item. Before any renderer is chosen, the route needs to become
+screen-space coordinates: `arcSegments()` returns lat/lon segments already
+split at the antimeridian (`M0-12`), but nothing yet turns that into points
+fit to a viewport with consistent padding. This half is pure geometry and does
+not depend on which renderer `M1-13` picks — `react-native-svg`, MapLibre and
+`expo-maps` would all consume the same projected points.
+
+**Do:**
+- A pure function in `packages/flight-sim` (e.g. `project.ts`) taking
+  `arcSegments()`'s output plus a viewport size and a padding ratio, returning
+  one array of `{x, y}` points per input segment — never merging segments, so
+  an antimeridian split never produces a point connecting across the seam.
+- Fit the projected bounds to the viewport with the same padding ratio
+  regardless of route length (a 5 mi hop and a 10,000 mi crossing both get the
+  same visual margin).
+
+**Do NOT:**
+- Do not touch any React/React Native code — this is pure math, testable with
+  plain Jest, no renderer decision required.
+- Do not decide the renderer here — that is `M1-13`.
+
+**Acceptance criteria:**
+- [ ] a Tokyo to LA route projects to two separate point arrays with no point
+  connecting across the antimeridian seam
+- [ ] a LA to NYC route's projected midpoint sits above the projected chord
+  midpoint
+- [ ] the route fits its bounds with the same padding ratio at 5 mi and
+  10,000 mi
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts`
+
+---
+
+### [ ] M1-13 — Decide the renderer (ADR-007) and draw the static route
+
+**Status:** todo · **Size:** M · **Depends on:** M1-12, M0-08
+**Read first:** `docs/DECISIONS.md` ADR-007
+
+**Why:** Split from `M1-05` (see its resolution note). This is the item that
+resolves ADR-007 from "proposed" to "accepted" or replaces it, and it is also
+the first item that renders anything to the screen this container can
+screenshot.
+
+**Do:**
+- Evaluate `expo-maps` against a bundled-vector-SVG chart (e.g.
+  `react-native-svg`) on: dashed polyline support, New Architecture
+  compatibility, web rendering for screenshots (this container's only
+  verifiable render path — `M0-08`), API keys, and offline behaviour. Record
+  the outcome as an update to ADR-007 in `docs/DECISIONS.md`.
+- Implement `MapCanvas.{ios,android,web}.tsx` behind one `FlightMap`
+  component, drawing the full route from `M1-12`'s projected segments as a
+  single solid polyline per segment.
+- Wire a story into the `M0-08` harness (`app/_dev/[story].tsx`) with a
+  frozen clock so it can be screenshotted deterministically.
 
 **Do NOT:**
 - Do not skip the ADR. This decision is expensive to reverse — it touches the
   flight screen, the Atlas and the Columbarium.
 - Do not add city labels, roads, or traffic. This is a chart, not Apple Maps.
+- Do not implement the flown/dashed split yet — that is `M1-14`.
 
 **Acceptance criteria:**
-- [ ] a Tokyo to LA route renders as two polylines with no horizontal streak
-- [ ] a LA to NYC route's projected midpoint sits above the chord midpoint
-- [ ] the route fits its bounds with the same padding ratio at 5 mi and 10,000 mi
-- [ ] two consecutive frozen-clock screenshots are byte-identical
+- [ ] two consecutive frozen-clock screenshots of the drawn route are
+  byte-identical
+- [ ] the rendered component keeps a Tokyo to LA route's two segments visually
+  separated, with no line connecting across the seam
+
+**Touches:** `docs/DECISIONS.md` (ADR-007),
+`apps/mobile/src/ui/screens/FlightMap.tsx`,
+`apps/mobile/src/ui/screens/MapCanvas.{ios,android,web}.tsx`,
+`apps/mobile/app/_dev/[story].tsx`
+
+---
+
+### [ ] M1-14 — Split the route into flown (solid) and remaining (dashed)
+
+**Status:** todo · **Size:** S · **Depends on:** M1-13
+**Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`)
+
+**Why:** Split from `M1-05` (see its resolution note). `PRODUCT.md` §7 and the
+original item's own "Do" line both call for the flown portion of the route to
+render solid and the rest dashed, so the bird's progress is legible on the
+chart itself, not only in the flight card's text.
+
+**Do:**
+- Extend `FlightMap` to take the flight's current fractional progress
+  (derived from `flightStateAt`, never `Date.now()`) and split each projected
+  segment at that fraction into a solid "flown" prefix and a dashed
+  "remaining" suffix.
+
+**Do NOT:**
+- Do not read the ambient clock inside `FlightMap` — progress is a prop,
+  computed by the caller from the server-corrected clock, matching `M1-04`'s
+  pattern for `FlightCard`.
+- Do not add any new visual element (bird marker, labels) — that is `M1-06`.
+
+**Acceptance criteria:**
+- [ ] at 40% elapsed, the solid portion covers 40% of the total projected
+  route length
+- [ ] a flight whose arrival has passed renders entirely solid
+- [ ] a flight that has not yet departed renders entirely dashed
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`,
+`apps/mobile/src/ui/screens/FlightMap.test.tsx`
 
 ---
 
 ### [ ] M1-06 — The flight screen
 
 **Status:** todo · **Size:** L (**split this before starting**)
-**Depends on:** M1-04, M1-05
+**Depends on:** M1-04, M1-14
 
 **Why:** This is the screenshot people send their friends. It is the entire
 marketing budget.
