@@ -689,7 +689,7 @@ extends to the mobile app.
 
 ### [ ] M1-04 — The flight card
 
-**Status:** todo · **Size:** S · **Depends on:** M1-01
+**Status:** in-progress · **Size:** S · **Depends on:** M1-01
 **Read first:** `packages/flight-sim/src/format.ts`, `docs/PRODUCT.md` §6
 
 **Why:** It is the single most screenshotted element of the original, and it is
