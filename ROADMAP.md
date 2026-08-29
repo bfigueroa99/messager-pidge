@@ -687,9 +687,9 @@ extends to the mobile app.
 
 ---
 
-### [ ] M1-04 — The flight card
+### [x] M1-04 — The flight card
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-01
+**Status:** done · **Size:** S · **Depends on:** M1-01
 **Read first:** `packages/flight-sim/src/format.ts`, `docs/PRODUCT.md` §6
 
 **Why:** It is the single most screenshotted element of the original, and it is
@@ -703,10 +703,13 @@ as place names. Text ticks at 1 Hz so the numbers do not jitter.
 - Do not fetch anything; the card takes props.
 
 **Acceptance criteria:**
-- [ ] renders "13h 13m away" and "2,446 mi" at 40% of a LA to NYC flight
-- [ ] renders "arriving" in the final minute
-- [ ] contains no speed value anywhere in its output
-- [ ] updates once per second, not once per frame
+- [x] renders "13h 13m away" and "2,446 mi" at 40% of a LA to NYC flight
+- [x] renders "arriving" in the final minute
+- [x] contains no speed value anywhere in its output
+- [x] updates once per second, not once per frame
+
+**Touches:** `apps/mobile/src/ui/screens/FlightCard.tsx`,
+`apps/mobile/src/ui/screens/FlightCard.test.tsx`
 
 ---
 

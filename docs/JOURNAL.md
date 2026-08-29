@@ -1651,3 +1651,78 @@ knowledge survives a context reset.
 - **Follow-ups filed:** `M1-11` (`blocked` on Q-002) — wire a real Supabase
   client into `apps/mobile` so `LoftPickerDeps.saveLoft` (and every future
   screen that reads or writes real data) has something real to call.
+
+## Iteration 18 — 2026-08-29 — M1-04
+
+- **Outcome:** done
+- **CI:** run 107 on the previous tip (`a47e19d`) completed in 3 seconds
+  (`created_at` 13:04:04Z, `completed_at` 13:04:07Z) with a 404 on
+  `get_job_logs` — the same never-scheduled shape Q-003 documents, not a real
+  failure. Not this iteration's item.
+- **Selection:** `iteration(18) - last_hardening_iteration(15) = 3 < 5` and
+  `iteration(18) - last_audit_iteration(11) = 7 < 10` — neither override
+  applies. Took the topmost `todo`, `M1-04`, size S, dep (`M1-01`) done.
+- **Verify:** typecheck ok · lint ok · 162 tests ok (+5, all in
+  `FlightCard.test.tsx`) · flight-sim coverage unchanged (99.48%/91.07%, both
+  above threshold — this item touches no engine source) · `gate:roadmap` ok
+  (20 done, 6 pending) · `gate:tests` ok (floor raised 157 → 162)
+- **What landed:** `apps/mobile/src/ui/screens/FlightCard.tsx` — a pure
+  presentation component over `flightStateAt`/`formatEta`/`formatDistance`
+  from `@pidge/flight-sim`. Props: a `PublicFlight`, `originName`/
+  `destinationName` display strings, an optional `unit` (defaults
+  `'imperial'`), and a required `now(): number` clock. Renders three lines —
+  `<origin> → <destination>`, `🕊 <eta>`, `<distance>` — and ticks via a
+  1000ms `setInterval`, not a frame loop, per the item's own acceptance
+  criterion. `distanceKm` comes straight from the `PublicFlight` (the whole
+  route's length, per `PRODUCT.md` §6's own `🕊 1d 2h away · 2,446 mi`
+  example), not `state.remainingKm` — the card names the trip, it does not
+  recompute a shrinking distance the copy table never asks for.
+  - Four tests cover the item's four acceptance criteria directly, using a
+    hand-built `PublicFlight` fixture (not a real `planFlight()` output —
+    the card only ever consumes the public shape) tuned so 40% elapsed
+    renders exactly "13h 13m away" / "2,446 mi", matching the roadmap item's
+    own wording.
+  - `/code-review --effort high` (self-review) found two real issues, both
+    fixed:
+    1. **`now` defaulted to `Date.now`.** `flightStateAt`'s own docstring
+       (`packages/flight-sim/src/state.ts`) is explicit that `nowMs` "must
+       come from the server-corrected clock, never `Date.now()`" — a wrong
+       or manually-set device clock would render an incorrect countdown, or
+       a flight that looks arrived or not-yet-departed when it isn't. Fixed
+       by making `now` a required prop instead of a defaulted one, so a
+       future caller (`M1-06`) has to decide what "now" means rather than
+       silently inheriting the device clock.
+    2. **Stale-closure interval restart.** The tick's `useEffect` depended
+       on `[now]`, so a parent supplying a fresh inline `now={() => ...}`
+       on every render — exactly what `M1-06`'s planned marker frame loop
+       (up to 60fps) would do — tears the interval down and restarts it
+       before its own 1000ms ever elapses, freezing the countdown
+       indefinitely. Fixed by reading `now` through a `useRef` updated on
+       every render and mounting the interval once with an empty dependency
+       array, so re-renders never restart it. Added a regression test that
+       re-renders the card 12 times with a brand-new `now` closure roughly
+       every 100ms and asserts the tick still eventually fires; manually
+       confirmed it fails against the pre-fix code (reverted locally, not
+       committed) and passes against the fix before landing either.
+- **Surprises for the next agent:**
+  - **A component that "takes props" can still have exactly one prop whose
+    default is a bug waiting for its first real caller.** `now = Date.now`
+    would have type-checked, passed every acceptance-criteria test (all of
+    which pass their own `now`), and looked like ordinary React ergonomics
+    — nothing in this item's own tests would ever have caught it, because
+    the danger only shows up once a caller *doesn't* pass one. Worth
+    checking a new prop's default against any invariant the value it feeds
+    already documents (here, `flightStateAt`'s own docstring), not just
+    against "does this compile and pass the acceptance tests."
+  - **A `useEffect([identity-unstable-callback])` pattern is invisible until
+    a caller re-renders faster than the effect's own interval.** Every test
+    that renders once and lets time pass would pass regardless of whether
+    the dependency array bug was present — the bug only manifests under
+    repeated re-renders with fresh closures, which nothing before `M1-06`
+    exists to exercise for real. Worth remembering the next time a ticking
+    component gets a second, faster-updating consumer: re-check whether the
+    original single-consumer test suite would actually have caught a
+    regression from the new consumer's calling pattern.
+- **Follow-ups filed:** none. `M1-06` (already on the roadmap) is the real
+  test of the interval-identity fix once a frame-loop-driven parent exists;
+  no new gap to file beyond what that item already covers.
