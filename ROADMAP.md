@@ -715,7 +715,7 @@ as place names. Text ticks at 1 Hz so the numbers do not jitter.
 
 ### [ ] M1-05 — The chart: decide the renderer and draw the route
 
-**Status:** todo · **Size:** L (**split this before starting**)
+**Status:** in-progress · **Size:** L (**split this before starting**)
 **Depends on:** M0-08, M0-02
 **Read first:** `docs/DECISIONS.md` ADR-007, `packages/flight-sim/src/geo.ts`
 
