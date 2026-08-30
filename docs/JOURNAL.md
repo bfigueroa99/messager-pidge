@@ -1831,3 +1831,138 @@ knowledge survives a context reset.
     of seam).
 - **Follow-ups filed:** none — `M1-12`, `M1-13`, `M1-14` are the follow-ups,
   already recorded on `ROADMAP.md` in full above.
+
+---
+
+## Iteration 20 — 2026-08-30 — HARDENING
+
+- **Outcome:** done
+- **CI:** runs 112–115 on the previous tip (`0ce7293`) all completed in 2–3
+  seconds via `mcp__github__actions_list`/`list_workflow_jobs`, the same
+  never-scheduled shape Q-003 documents. Not this iteration's item.
+- **Selection:** `iteration(20) - last_hardening_iteration(15) = 5 >= 5` —
+  the hardening override fires. `iteration(20) - last_audit_iteration(11) =
+  9 < 10`, so not an audit. HARDENING per `docs/LOOP.md` §6.
+- **Verify:** typecheck ok · lint ok · 163 tests ok (+1, the regression test
+  below) · flight-sim coverage unchanged (99.48%/91.07%, both above
+  threshold — this pass touches no engine source) · `gate:roadmap` ok (20
+  done, 9 pending) · `gate:tests` ok (floor raised 162 → 163)
+- **What landed:** worked `docs/LOOP.md` §6's checklist against the diff
+  accumulated since the last hardening pass (`3377125..0ce7293`, ~1,800
+  lines across `M1-10`, `M1-03`, `M1-04`, and the `M1-05` split):
+  1. Ticked-without-a-test criteria: none — `gate:roadmap` already ok.
+  2. Dead code: `npx knip` repeated the previously-verified false positives
+     (the four unused files, `expo-font`, the phantom `expo-updates`
+     dependency, `jest.config.js`'s projects shorthand) plus new findings on
+     `tokens.ts`/`typography.ts`: `RADII`, `DURATIONS_MS`, and
+     `LINE_HEIGHT_RATIO` (plus their `keyof` types) have zero consumers
+     today. Checked each against the roadmap before deleting anything:
+     `DURATIONS_MS.release`'s own comment already names `M1-07` (todo, not
+     done), and `M1-07`'s own "Do" line asks for "a ~1.2 s release
+     ceremony" — the same 1200ms value. Same category iteration 15 already
+     ruled on for `tokens.ts`/`typography.ts` as a whole (`M1-01`'s real
+     deliverables, sitting unconsumed only because their consumer hasn't
+     landed yet) — left alone rather than deleted.
+  3. `/simplify` (4 parallel agents — reuse, simplification, efficiency,
+     altitude — against that same diff): reuse found nothing. Simplification
+     found three, all fixed:
+     - `LoftPicker.tsx`'s `SaveStatus` carried a `'saving'` variant that
+       rendered identically to `'idle'` (no spinner, no disabled
+       `Pressable`) and an `isSelected` derived variable used in exactly one
+       place — removed the variant and collapsed the checkmark condition to
+       `status.kind === 'saved' && status.cityId === city.id`.
+     - `strings.test.ts` and `LoftPicker.test.tsx` each hand-maintained an
+       "in-fiction word" array for the same banned-word intent and had
+       already drifted apart (one had `'loft is'`/`'flew'`/`🕊`, the other
+       had `'dove'`) — merged into one shared, exported
+       `apps/mobile/src/ui/copy/in-fiction-words.ts` both tests import, so
+       the two checks can't silently diverge on what counts as "in-fiction"
+       again.
+     Efficiency found two, both fixed:
+     - `release-pigeon/index.ts`'s `hasEverReleased` used
+       `{ count: 'exact', head: true }` to answer a yes/no question — cost
+       grows with every flight a user has ever sent, for a boolean that only
+       ever flips once. Swapped for `.select('id').eq('sender_id',
+       userId).limit(1)` / `data.length > 0`, same fail-closed
+       `error || data === null → true` path, now O(1) regardless of history.
+     - `city-search.ts`'s `matchRank` re-normalized every city's static name
+       (lower-case, NFD, strip diacritics) on every call — which fires on
+       every keystroke via `LoftPicker`'s `useMemo`. Added a
+       `WeakMap<City, string>` cache keyed on the city object itself (works
+       for the real bundled dataset and any test fixture array alike,
+       collected automatically since it's a `WeakMap`), so each city's name
+       is normalized once.
+     Altitude found two, both deliberately left as-is:
+     - The same `hasEverReleased` region has a real TOCTOU race (two
+       concurrent releases from a brand-new user could both read "never
+       released" and both get first-flight immunity) — but this is the
+       *exact* gap iteration 16's journal already found, triaged, and
+       deliberately deferred (narrow, benign-direction only, needs a
+       sender-scoped lock inside `release_pigeon`'s own transaction, bigger
+       than this pass's scope). Not re-fixed or re-filed — nothing new to
+       say beyond what iteration 16 already recorded.
+     - `LoftPicker.tsx`'s `latestSelectionId` stale-response guard is a
+       hand-rolled, per-screen solution to a generic "ignore a stale async
+       result" problem with no existing hook to reuse — but also no second
+       consumer yet. Left inline (no premature abstraction for a
+       single call site), flagged for extraction into a shared
+       `useLatestAsync`-style utility once a second screen needs the same
+       pattern.
+  4. Coverage: unchanged, already above threshold — no action.
+  5. `any`/`@ts-ignore`/`TODO`/`FIXME`: grepped the real `.ts`/`.tsx` source
+     tree directly (not docs, which discuss these terms conceptually) —
+     none found.
+  6. Dependencies without an ADR: none new since the last hardening pass —
+     `package.json`'s only change in the diffed range is a new
+     `seed:cities` script entry, not a dependency.
+  - **Self-review (`/code-review --effort high`) on my own fixes caught a
+    real regression I introduced**, not a pre-existing one: removing the
+    `'saving'` variant also removed its side effect of resetting `status`
+    the instant a new city is tapped, not just its (genuinely dead)
+    rendering branch. Concretely: tap city A, its save fails (error banner
+    shows), tap city B to retry — before my first-draft fix, the stale
+    error banner from A stayed on screen for the entire duration of B's own
+    save instead of clearing immediately, which would have read as "the
+    retry already failed" before it had even resolved. Fixed by resetting
+    `status` to `{ kind: 'idle' }` synchronously at the top of
+    `handleSelect`, which gets the same immediate-clear behavior without
+    needing a distinct `'saving'` variant to carry it. Added a regression
+    test (`'tapping a new city after a failed save clears the error banner
+    immediately, not after the retry resolves'`), manually confirmed it
+    fails against the code with the reset removed and passes with it
+    restored, before landing either.
+  - `/security-review` on the one `supabase/`-adjacent change
+    (`release-pigeon/index.ts`'s `hasEverReleased` query): no findings. Same
+    service-role client before and after, `userId` is server-derived from a
+    verified JWT (never client input), `.eq()` is a parameterized filter,
+    and the fetched row data is only ever read for `.length`, never
+    returned to any caller.
+- **Surprises for the next agent:**
+  - **A "dead" state variant found by a simplification pass can still carry
+    a load-bearing side effect through its *transition*, even when its own
+    rendered output is genuinely unreachable.** `SaveStatus`'s `'saving'`
+    kind never had distinct visual treatment (that part of the
+    simplification finding was correct), but *entering* it on every tap was
+    doing real work: clearing whatever the previous selection had left on
+    screen. Deleting the variant without checking what set*ting* it used to
+    do — not just what it used to render — is exactly how a hardening pass
+    optimizing for "fewer lines" introduces a regression instead of catching
+    one. Worth checking a flagged-dead variant's *setter* call sites, not
+    just its render-time reads, before removing it.
+  - **A `knip`/dead-code finding on a design-token export can be resolved by
+    grep'ing the roadmap for the exact constant the comment already names**
+    (`DURATIONS_MS.release`'s comment said `M1-07`; `M1-07`'s own "Do" line
+    said "~1.2 s release ceremony" — the same number), rather than reasoning
+    from precedent alone about the file as a whole. Faster and more
+    convincing than re-deriving iteration 15's "forward-built infrastructure"
+    judgment from scratch.
+  - **`git remote set-head origin -a` fixes a missing `refs/remotes/
+    origin/HEAD` in one command, with no lasting cost** — needed here
+    because `/security-review`'s own `git diff origin/HEAD...` failed with
+    "unknown revision" on this checkout otherwise. Worth reaching for
+    immediately rather than working around the skill, if the same "ambiguous
+    argument 'origin/HEAD...'" error shows up again in a future container.
+- **Follow-ups filed:** none. The TOCTOU race and the stale-response-guard
+  extraction were both evaluated and deliberately left unfiled (see above) —
+  the former is already on record from iteration 16 with nothing new to add,
+  the latter has no second consumer yet to justify the abstraction.

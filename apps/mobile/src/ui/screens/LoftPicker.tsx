@@ -26,7 +26,7 @@ export interface LoftPickerProps {
   cities?: readonly City[];
 }
 
-type SaveStatus = { kind: 'idle' } | { kind: 'saving'; cityId: string } | { kind: 'saved'; cityId: string } | { kind: 'error' };
+type SaveStatus = { kind: 'idle' } | { kind: 'saved'; cityId: string } | { kind: 'error' };
 
 /**
  * `[M1-03]` A searchable, offline city picker that writes the selection to
@@ -48,7 +48,10 @@ export function LoftPicker({ deps, cities = CITIES }: LoftPickerProps) {
 
   const handleSelect = (city: City): void => {
     latestSelectionId.current = city.id;
-    setStatus({ kind: 'saving', cityId: city.id });
+    // Clear whatever the previous selection left on screen (a checkmark or
+    // the error banner) the moment a new city is tapped, rather than leaving
+    // it visible for the duration of this tap's own save.
+    setStatus({ kind: 'idle' });
     deps
       .saveLoft(city)
       .then(() => {
@@ -79,12 +82,11 @@ export function LoftPicker({ deps, cities = CITIES }: LoftPickerProps) {
       <ScrollView>
         {results.map((city) => {
           const label = city.admin1 !== null ? `${city.name}, ${city.admin1}` : `${city.name}, ${city.countryCode}`;
-          const isSelected = status.kind !== 'idle' && status.kind !== 'error' && status.cityId === city.id;
           return (
             <Pressable key={city.id} onPress={() => handleSelect(city)} style={styles.row}>
               <Text style={styles.rowText}>
                 {label}
-                {isSelected && status.kind === 'saved' ? ' ✓' : ''}
+                {status.kind === 'saved' && status.cityId === city.id ? ' ✓' : ''}
               </Text>
             </Pressable>
           );

@@ -13,6 +13,21 @@ function normalize(value: string): string {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
+// City names are static, but `searchCities` re-ranks the whole dataset on
+// every keystroke — caching each city's normalized name (keyed on the object
+// itself, so it works for the real bundled dataset and any test fixture
+// array alike) avoids repeating the same NFD normalization on every call.
+const normalizedNames = new WeakMap<City, string>();
+
+function normalizedName(city: City): string {
+  let cached = normalizedNames.get(city);
+  if (cached === undefined) {
+    cached = normalize(city.name);
+    normalizedNames.set(city, cached);
+  }
+  return cached;
+}
+
 /**
  * Ranks by how the query matches a city's name — exact, then prefix, then
  * substring — and breaks ties by population, so a query that matches several
@@ -20,7 +35,7 @@ function normalize(value: string): string {
  * for no match at all.
  */
 function matchRank(city: City, query: string): number | null {
-  const name = normalize(city.name);
+  const name = normalizedName(city);
   if (name === query) return 0;
   if (name.startsWith(query)) return 1;
   if (name.includes(query)) return 2;

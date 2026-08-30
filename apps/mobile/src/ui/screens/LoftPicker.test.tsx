@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 
 import type { City } from '../../data/cities';
+import { IN_FICTION_WORDS } from '../copy/in-fiction-words';
 import { LoftPicker, type LoftPickerDeps } from './LoftPicker';
 
 const SPRINGFIELD_IL: City = {
@@ -46,9 +47,8 @@ describe('LoftPicker', () => {
     ).toBeTruthy();
     expect(screen.getByPlaceholderText('Search for a city')).toBeTruthy();
 
-    const inFiction = ['pigeon', 'bird', 'dove', 'flight', 'wing'];
     const rendered = document.body.textContent?.toLowerCase() ?? '';
-    for (const word of inFiction) {
+    for (const word of IN_FICTION_WORDS) {
       expect(rendered).not.toContain(word);
     }
   });
@@ -93,6 +93,29 @@ describe('LoftPicker', () => {
     });
 
     expect(screen.getByText('The loft cannot be reached.')).toBeTruthy();
+  });
+
+  it('[M1-03] tapping a new city after a failed save clears the error banner immediately, not after the retry resolves', async () => {
+    const { promise, reject } = deferred<void>();
+    const firstSave = jest.fn(() => promise);
+    const retry = deferred<void>();
+    const saveLoft = jest.fn().mockImplementationOnce(firstSave).mockImplementationOnce(() => retry.promise);
+    render(<LoftPicker deps={{ saveLoft }} cities={FIXTURE_CITIES} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Search for a city'), { target: { value: 'Springfield' } });
+    fireEvent.click(screen.getByText('Springfield, IL'));
+    await act(async () => {
+      reject(new Error('no Supabase client wired into the mobile app yet — see M1-11'));
+      await promise.catch(() => undefined);
+    });
+    expect(screen.getByText('The loft cannot be reached.')).toBeTruthy();
+
+    fireEvent.click(screen.getByText('Springfield, MA'));
+
+    // The banner from the first, failed attempt must be gone the instant a
+    // new city is tapped — not still showing while the retry's own save is
+    // still pending.
+    expect(screen.queryByText('The loft cannot be reached.')).toBeNull();
   });
 
   it('[M1-03] a slow first save resolving after a faster second one does not overwrite the newer selection', async () => {

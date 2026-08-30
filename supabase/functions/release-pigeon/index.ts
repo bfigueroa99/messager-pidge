@@ -77,12 +77,9 @@ const deps: ReleaseDeps = {
     // user as already having released, so `isFirstEverFlight` comes out
     // `false` (normal risk) rather than incorrectly granting death-immunity.
     // A flight that should never die still can't; the reverse is not true.
-    const { count, error } = await admin
-      .from('flights')
-      .select('id', { count: 'exact', head: true })
-      .eq('sender_id', userId);
-    if (error || count === null) return true;
-    return count > 0;
+    const { data, error } = await admin.from('flights').select('id').eq('sender_id', userId).limit(1);
+    if (error || data === null) return true;
+    return data.length > 0;
   },
 
   async releasePigeon(args: ReleaseArgs) {

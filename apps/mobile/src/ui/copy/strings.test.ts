@@ -1,3 +1,4 @@
+import { IN_FICTION_WORDS } from './in-fiction-words';
 import { t, type Copy } from './strings';
 
 /**
@@ -48,7 +49,6 @@ describe('the copy catalogue', () => {
     // The picker is location/privacy-adjacent — PRODUCT.md §5's
     // consent-boundary exception applies, so unlike every other row this
     // copy must NOT sound like the rest of the app.
-    const inFiction = ['pigeon', 'bird', 'loft is', 'flew', 'flight', 'wing', '🕊'];
     const samples = [
       t(SAMPLE_COPY.loftPickerTitle),
       t(SAMPLE_COPY.loftPickerSearchLabel),
@@ -58,7 +58,7 @@ describe('the copy catalogue', () => {
 
     for (const sample of samples) {
       const lower = sample.toLowerCase();
-      for (const word of inFiction) {
+      for (const word of IN_FICTION_WORDS) {
         expect(lower).not.toContain(word);
       }
     }
