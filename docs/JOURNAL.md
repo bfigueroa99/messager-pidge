@@ -1966,3 +1966,105 @@ knowledge survives a context reset.
   extraction were both evaluated and deliberately left unfiled (see above) —
   the former is already on record from iteration 16 with nothing new to add,
   the latter has no second consumer yet to justify the abstraction.
+
+---
+
+## Iteration 21 — 2026-08-30 — AUDIT
+
+- **Outcome:** done
+- **CI:** run 119 on the previous tip (`1c2d67c`) completed in 2 seconds via
+  `mcp__github__actions_list`/`list_workflow_jobs`, the same never-scheduled
+  shape Q-003 documents. Not this iteration's item.
+- **Selection:** `iteration(21) - last_hardening_iteration(20) = 1 < 5`;
+  `iteration(21) - last_audit_iteration(11) = 10 >= 10`. Only the audit
+  override fired — AUDIT per `docs/LOOP.md` §7.
+- **Verify:** typecheck ok · lint ok · 163 tests ok (unchanged — an AUDIT
+  with no gap adds no test) · flight-sim coverage unchanged (99.48%/91.07%)
+  · `gate:roadmap` ok (20 done, 9 pending) · `gate:tests` ok (floor
+  unchanged at 163)
+- **What landed:** re-derived `PRODUCT.md` §3's INV-1…INV-7 independently
+  against the current tree, rather than assuming iteration 11's table still
+  held — every cited `file:line` was re-read directly, not copied forward.
+  All seven still hold:
+  - **INV-1** (`speed.ts`/`plan.ts`): confirmed no client-supplied value
+    reaches either — `handler.ts`'s `ReleaseRequestBody` declares
+    `departsAtMs`/`originLat`/`originLon`/`destLat`/`destLon` fields (the
+    request type used to decode arbitrary JSON allows them) but the handler
+    never reads them; origin/destination/departure always come from
+    `getLoft`/`now()` on the server.
+  - **INV-2** (`hazard.ts` + body destruction): also checked that a pigeon
+    already dead stays dead across a repeat release attempt
+    (`0006_release_guards.sql:72,76`).
+  - **INV-3** (`flightStateAt`): checked the one new consumer since the last
+    audit, `FlightCard.tsx` — it calls `flightStateAt(flight, nowMs)` fresh
+    on every render; the only thing it stores in React state is a clock
+    reading (`nowMs`), never a position.
+  - **INV-4** (seeded fate): checked the one real release path,
+    `release-pigeon/index.ts`'s `randomSeed()` — a single
+    `crypto.getRandomValues` call per release, stored verbatim in
+    `flights.seed`, never re-rolled.
+  - **INV-5** (secret until resolution): checked that `PublicFlight` and
+    `FlightSecret` (`packages/flight-sim/src/types.ts`) remain architecturally
+    separate types, and that both client screens built since the last audit
+    (`FlightCard`, `LoftPicker`) consume only `PublicFlight` — neither has a
+    code path that could receive `FlightSecret` even by mistake.
+  - **INV-6** (true position, no replay): `FlightCard` takes `now` as a
+    required prop (no default, confirmed by `M1-04`'s own journal entry),
+    never `Date.now()`.
+  - **INV-7** (city-centroid snap): confirmed the trigger fires
+    unconditionally on every `profiles` write regardless of caller, now
+    backed by `M1-03`'s 130 real seeded cities instead of test fixtures
+    alone, and that `LoftPicker` only ever hands it a city's own centroid —
+    the snap is enforced twice over, not bypassed by the new picker screen.
+  - Three files' line numbers shifted since iteration 11 without changing
+    what they enforce: `speed.ts` (`M0-15`'s own fix moved
+    `effectiveSpeedKmh`/`durationMs` down 7 lines), `loft-snap.test.ts` and
+    `visibility.test.ts` (`M1-03` added a `delete from cities` to each file's
+    `beforeEach`, shifting later tests down a handful of lines). Recorded
+    the new line numbers rather than leaving the table stale.
+  - **Drift check:** re-ran iteration 11's exact non-goal grep (`streak`,
+    `undo`, `unsend`, `retry`, `fast[- ]?path`, `boost`, `priority send`,
+    `gacha`, `breed`, `rarity`, `leaderboard`, case-insensitive) across
+    `packages/`, `apps/`, `supabase/` excluding tests. Same two incidental
+    prose hits as before (`geo.ts`'s rendering-artifact "streak",
+    `0005_schedule.sql`'s cron-doesn't-"retry") plus one new incidental hit,
+    `eslint.config.mjs:98`'s comment citing "failed. Retry?" as an example of
+    copy the voice guard exists to *ban*, not copy it implements. No non-goal
+    mechanic anywhere in shipped code.
+  - Read all nine pending `ROADMAP.md` items (`M1-06`..`M1-09`,
+    `M1-11`..`M1-14`; `M1-05` itself is `split`, not `todo`). Each still
+    cites a specific `PRODUCT.md` section in its own "Why," and each item's
+    own "Do NOT" list rules out the non-goal nearest its feature surface
+    (no exhaustive list here — see `docs/AUDIT.md` for the specifics per
+    item).
+  - Two spot checks beyond the mechanical grep: `FlightCard`'s literal JSX
+    text (only `"→"` and `"🕊"`, neither containing a letter, matching
+    `PRODUCT.md` §5's "dove glyph appears in exactly one place" rule) and
+    `M1-10`'s `isFirstEverFlight` (counts across a sender's *entire* flight
+    history, not per-conversation or per-recipient, matching §6's
+    "first-ever flight" read literally).
+  - `docs/AUDIT.md` overwritten with the iteration 21 table (the doc's own
+    header says it holds only the latest audit, not a history). **No GAP
+    found this time** — contrast iteration 11, which found and filed
+    `M0-15`. No `ROADMAP.md` item inserted.
+- **Surprises for the next agent:**
+  - **Re-deriving an audit table from scratch, rather than trusting the
+    previous one's line numbers, actually caught something small the
+    previous table couldn't have known about:** two of iteration 11's own
+    cited test line numbers had already drifted by the time this audit ran
+    (`M0-15`'s fix, `M1-03`'s new `beforeEach` lines) — neither changes the
+    verdict, but a table that just copied the old citations forward would
+    have pointed a future reader at the wrong line the next time they went
+    to check the code for themselves. Worth re-grepping every citation
+    fresh each audit rather than diffing against the previous table's prose.
+  - **A "no GAP found" audit is still worth writing in full, not just noting
+    "still clean."** The value here wasn't the verdict (unchanged from
+    iteration 11 in outcome) but the evidence trail proving *why* it's still
+    true after ~10 iterations of real feature work landed on top of the
+    engine — two new client screens, a real release path, a real cities
+    dataset. An audit that only checks "did anything already-flagged change"
+    would miss a genuinely new violation introduced by new code; this one
+    had to independently verify each new consumer (`FlightCard`, `LoftPicker`,
+    `M1-10`'s real release path) against invariants written before any of
+    them existed.
+- **Follow-ups filed:** none. No gap found; nothing to file.
