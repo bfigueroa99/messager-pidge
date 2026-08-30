@@ -730,9 +730,9 @@ last of the three.
 
 ---
 
-### [ ] M1-12 — Route projection: fit-to-bounds screen coordinates
+### [x] M1-12 — Route projection: fit-to-bounds screen coordinates
 
-**Status:** in-progress · **Size:** S · **Depends on:** M0-02
+**Status:** done · **Size:** S · **Depends on:** M0-02
 **Read first:** `packages/flight-sim/src/geo.ts` (`arcSegments`,
 `splitAtAntimeridian`)
 
@@ -759,11 +759,11 @@ not depend on which renderer `M1-13` picks — `react-native-svg`, MapLibre and
 - Do not decide the renderer here — that is `M1-13`.
 
 **Acceptance criteria:**
-- [ ] a Tokyo to LA route projects to two separate point arrays with no point
+- [x] a Tokyo to LA route projects to two separate point arrays with no point
   connecting across the antimeridian seam
-- [ ] a LA to NYC route's projected midpoint sits above the projected chord
+- [x] a LA to NYC route's projected midpoint sits above the projected chord
   midpoint
-- [ ] the route fits its bounds with the same padding ratio at 5 mi and
+- [x] the route fits its bounds with the same padding ratio at 5 mi and
   10,000 mi
 
 **Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts`

@@ -2068,3 +2068,98 @@ knowledge survives a context reset.
     `M1-10`'s real release path) against invariants written before any of
     them existed.
 - **Follow-ups filed:** none. No gap found; nothing to file.
+
+---
+
+## Iteration 22 — 2026-08-30 — M1-12
+
+- **Outcome:** done
+- **CI:** runs 120–123 on the previous tip (`54c9fb8`) all completed in 2–3
+  seconds via `mcp__github__actions_list`/`list_workflow_jobs` (job
+  `99183387447`: created 00:39:03, completed 00:39:06), the same
+  never-scheduled shape Q-003 documents — no runner assigned, no step
+  output. Not this iteration's item.
+- **Selection:** `iteration(22) - last_hardening_iteration(20) = 2 < 5`;
+  `iteration(22) - last_audit_iteration(21) = 1 < 10`. Neither override
+  fired. Topmost `todo` item with satisfied dependencies: `M1-12` (`M1-05`
+  itself is `split`, not `todo`, so the loop's own selection rule skips
+  past it to the first of its three children).
+- **Verify:** typecheck ok · lint ok · 168 tests ok (+5) · flight-sim
+  coverage 99.56%/90.62% (both above threshold; the one branch `project.ts`
+  leaves uncovered is the coincident-endpoint `MIN_SPAN_DEG` floor, the same
+  category of defensive-only branch `state.ts`/`hazard.ts` already carry
+  under this project's coverage gate) · `gate:roadmap` ok (20 done, 9
+  pending — unchanged count since `M1-05`'s split already moved this item
+  onto the roadmap; landing it doesn't change the pending total, it
+  reduces which nine are still open) · `gate:tests` ok (floor raised
+  167 → 168)
+- **What landed:** `packages/flight-sim/src/project.ts` —
+  `projectSegments(segments, viewport, paddingRatio)`, a pure function
+  taking `arcSegments()`'s antimeridian-split output and turning it into
+  one `{x, y}` array per input segment, fit to a viewport with a shared
+  scale on both axes (never an independent x/y stretch, which would distort
+  the route's true curvature) and centered so the tighter axis touches
+  `paddingRatio * viewport` exactly and the other axis gets at least that
+  much margin.
+  - The real difficulty was the antimeridian case specifically: `arcSegments`
+    hands this function *already-split* segments, each internally free of
+    any >180° longitude jump, but a naive `Math.min`/`Math.max` over the raw
+    longitudes across all segments (e.g. Tokyo's ~140° and LA's ~-118°,
+    plus the synthetic ±180° boundary points `splitAtAntimeridian` inserts)
+    would measure a bounding box spanning nearly the entire globe instead of
+    the route's true ~80° angular width — fitting to that bogus box would
+    make every real point cluster into a sliver near one edge of the
+    viewport. Fixed with `unwrapLongitudes`: walk every segment in order
+    without resetting the "previous longitude" at a segment boundary, and
+    whenever the raw jump between two consecutive points (which, by
+    `splitAtAntimeridian`'s own guarantee, can only happen *at* a segment
+    boundary) exceeds 180°, accumulate a running ±360° offset. This
+    reconstructs one continuous longitude value per point using only the
+    already-split segments this function receives — no second, unsplit copy
+    of the path needed as a separate parameter.
+  - Self-review (`/code-review --effort high`) found a real gap beyond the
+    three listed acceptance criteria: `paddingRatio` was trusted verbatim,
+    so a caller passing `>= 0.5` (e.g. a percentage like `50` meant as
+    "50%") would drive `drawableWidth`/`drawableHeight` negative, flipping
+    `scale` negative and silently mirroring every projected point instead
+    of erroring — and exactly `0.5` collapses the whole route to one point
+    at the viewport's center, both failures a future renderer would see
+    only as "the map looks wrong" with nothing pointing back to this
+    function. Fixed by clamping to `[0, 0.49]`, the same "clamp rather than
+    trust the caller" pattern `geo.ts`'s own `interpolate` already uses for
+    its `f` parameter — chose clamping over throwing specifically to match
+    that existing precedent rather than introduce a second error-handling
+    style in the same package. Added a regression test asserting `0.5`, `1`,
+    and `-1` all still produce a route with `maxX > minX` and `maxY > minY`;
+    confirmed it fails (collapses to a single point) against the code
+    before the clamp and passes after.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **A function that only ever receives *already-split* antimeridian
+    segments can still reconstruct one continuous unwrapped longitude
+    across the whole route, without a second unsplit-path parameter** — the
+    key fact making this possible is that `splitAtAntimeridian` guarantees
+    the only >180° jump in the entire structure sits exactly at a segment
+    boundary (never inside one segment), so tracking "previous longitude"
+    across the segment-array boundary (i.e. *not* resetting it when moving
+    to the next segment) is enough to detect every crossing and accumulate
+    the right running offset. Worth remembering for `M1-13`/`M1-14`, which
+    will consume this same segment shape and might otherwise reach for "just
+    pass the pre-split path too" as a first instinct.
+  - **Testing a screen-space "bow above the chord" claim requires
+    projecting the two endpoints and the bow midpoint *together*, in one
+    call** — projecting them separately (three independent
+    `projectSegments` calls) would each compute its own bounding box and
+    scale from a single point, which is degenerate and proves nothing about
+    their relative position. The test here builds one three-point segment
+    (`[LAX, bowMidpoint, NYC]`) specifically so all three share one fit.
+  - **The item's own acceptance criteria (two-segment seam separation, bow
+    direction, padding consistency) said nothing about `paddingRatio`
+    input validation** — that gap only surfaced under adversarial
+    self-review, not from the written criteria. Worth treating "no test
+    asks for this" as distinct from "nothing here is worth testing" on any
+    pure function about to gain a second real caller (`M1-13`, next).
+- **Follow-ups filed:** none. `M1-13` (renderer decision + static draw) and
+  `M1-14` (flown/dashed split) are already on `ROADMAP.md` from the `M1-05`
+  split and are unaffected by anything found here.
