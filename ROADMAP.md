@@ -732,7 +732,7 @@ last of the three.
 
 ### [ ] M1-12 — Route projection: fit-to-bounds screen coordinates
 
-**Status:** todo · **Size:** S · **Depends on:** M0-02
+**Status:** in-progress · **Size:** S · **Depends on:** M0-02
 **Read first:** `packages/flight-sim/src/geo.ts` (`arcSegments`,
 `splitAtAntimeridian`)
 
