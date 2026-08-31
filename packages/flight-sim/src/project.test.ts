@@ -1,6 +1,6 @@
 import { arcSegments, interpolate } from './geo';
 import { LAX, LONDON, NYC, SYDNEY, TOKYO } from './__fixtures__/cities';
-import { projectSegments } from './project';
+import { projectSegments, splitAtProgress } from './project';
 
 const VIEWPORT = { width: 400, height: 800 };
 const PADDING_RATIO = 0.1;
@@ -81,5 +81,78 @@ describe('projectSegments', () => {
       expect(maxX).toBeGreaterThan(minX);
       expect(maxY).toBeGreaterThan(minY);
     }
+  });
+});
+
+function totalLength(segments: readonly (readonly { x: number; y: number }[])[]): number {
+  return segments.reduce((sum, segment) => {
+    let length = 0;
+    for (let i = 1; i < segment.length; i++) {
+      length += Math.hypot(segment[i]!.x - segment[i - 1]!.x, segment[i]!.y - segment[i - 1]!.y);
+    }
+    return sum + length;
+  }, 0);
+}
+
+describe('splitAtProgress', () => {
+  it('[M1-14] at 40% elapsed, the flown portion covers 40% of the total projected route length', () => {
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const total = totalLength(projected);
+
+    const { flown } = splitAtProgress(projected, 0.4);
+
+    expect(totalLength(flown) / total).toBeCloseTo(0.4, 2);
+  });
+
+  it('[M1-14] a flight whose arrival has passed renders entirely solid', () => {
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+
+    const { flown, remaining } = splitAtProgress(projected, 1);
+
+    expect(flown).toEqual(projected);
+    remaining.forEach((segment) => expect(segment.length).toBe(0));
+  });
+
+  it('[M1-14] a flight that has not yet departed renders entirely dashed', () => {
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+
+    const { flown, remaining } = splitAtProgress(projected, 0);
+
+    flown.forEach((segment) => expect(segment.length).toBe(0));
+    expect(remaining).toEqual(projected);
+  });
+
+  it('[M1-14] never merges segments across the antimeridian seam when splitting a Tokyo to LA route', () => {
+    const projected = projectSegments(arcSegments(TOKYO, LAX), VIEWPORT, PADDING_RATIO);
+    expect(projected.length).toBe(2);
+
+    for (const progress of [0.1, 0.5, 0.9]) {
+      const { flown, remaining } = splitAtProgress(projected, progress);
+
+      expect(flown.length).toBe(2);
+      expect(remaining.length).toBe(2);
+      projected.forEach((segment, i) => {
+        // The flown and remaining halves of segment i must together retrace
+        // exactly that segment's own length — never spilling into, merging
+        // with, or dropping any of segment i's neighbour.
+        expect(totalLength([flown[i]!]) + totalLength([remaining[i]!])).toBeCloseTo(totalLength([segment]), 6);
+      });
+    }
+  });
+
+  it('[M1-14] clamps progress outside [0, 1] instead of extrapolating past either end', () => {
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+
+    expect(splitAtProgress(projected, 1.5).flown).toEqual(projected);
+    expect(splitAtProgress(projected, -0.5).remaining).toEqual(projected);
+  });
+
+  it('[M1-14] renders entirely dashed rather than dividing by zero on a zero-length route', () => {
+    const projected = projectSegments(arcSegments(LAX, LAX), VIEWPORT, PADDING_RATIO);
+
+    const { flown, remaining } = splitAtProgress(projected, 0.5);
+
+    flown.forEach((segment) => expect(segment.length).toBe(0));
+    expect(remaining).toEqual(projected);
   });
 });

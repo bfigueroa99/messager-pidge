@@ -89,3 +89,109 @@ export function projectSegments(
     })),
   );
 }
+
+/** `projectSegments()`'s output, partitioned at a point along the route. */
+export interface ProgressSplitSegments {
+  /** The portion of each segment already flown, up to the split point. */
+  readonly flown: readonly (readonly ProjectedPoint[])[];
+  /** The portion of each segment not yet flown, from the split point on. */
+  readonly remaining: readonly (readonly ProjectedPoint[])[];
+}
+
+function distance(a: ProjectedPoint, b: ProjectedPoint): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function segmentLength(segment: readonly ProjectedPoint[]): number {
+  let length = 0;
+  for (let i = 1; i < segment.length; i++) length += distance(segment[i - 1]!, segment[i]!);
+  return length;
+}
+
+/**
+ * Splits a segment's points at `targetLength` (screen-space distance along
+ * this segment alone), inserting one linearly-interpolated point shared by
+ * both halves so the flown and remaining polylines meet exactly at the split
+ * — never overlapping, never leaving a gap.
+ */
+function splitSegment(
+  segment: readonly ProjectedPoint[],
+  targetLength: number,
+): { flown: ProjectedPoint[]; remaining: ProjectedPoint[] } {
+  if (segment.length === 0) return { flown: [], remaining: [] };
+
+  const flown: ProjectedPoint[] = [segment[0]!];
+  let cumulative = 0;
+  for (let i = 1; i < segment.length; i++) {
+    const prev = segment[i - 1]!;
+    const curr = segment[i]!;
+    const stepLength = distance(prev, curr);
+    if (cumulative + stepLength >= targetLength) {
+      const t = stepLength === 0 ? 0 : (targetLength - cumulative) / stepLength;
+      const splitPoint: ProjectedPoint = { x: prev.x + (curr.x - prev.x) * t, y: prev.y + (curr.y - prev.y) * t };
+      flown.push(splitPoint);
+      return { flown, remaining: [splitPoint, ...segment.slice(i)] };
+    }
+    flown.push(curr);
+    cumulative += stepLength;
+  }
+  // `targetLength` should never exceed this segment's own length, by
+  // splitAtProgress's own invariant — but that invariant compares a sum of
+  // independently-accumulated segment lengths against `totalLength * progress`,
+  // a different floating-point computation, so it is not bit-exact. Falling
+  // back to "the whole segment is flown" here (rather than throwing) is the
+  // same clamp-not-crash choice `projectSegments` already makes for an
+  // out-of-range `paddingRatio`.
+  return { flown: [...segment], remaining: [] };
+}
+
+/**
+ * Partitions `projectSegments()`'s output into a flown prefix and a
+ * remaining suffix at `progress` (a 0..1 fraction of the route's total
+ * screen-space length, from `flightStateAt`'s own `progress` field — never
+ * `Date.now()`). Segments are never merged or reordered: at most one input
+ * segment straddles the split point and is itself split there; every other
+ * segment is passed through whole to whichever side it falls on. This keeps
+ * `M1-12`'s antimeridian guarantee intact — a split route still never draws a
+ * point connecting across the seam, on either side of the flown/remaining
+ * divide.
+ */
+export function splitAtProgress(
+  segments: readonly (readonly ProjectedPoint[])[],
+  progress: number,
+): ProgressSplitSegments {
+  const clamped = Math.min(Math.max(progress, 0), 1);
+
+  if (clamped >= 1) return { flown: segments.map((segment) => [...segment]), remaining: segments.map(() => []) };
+  if (clamped <= 0) return { flown: segments.map(() => []), remaining: segments.map((segment) => [...segment]) };
+
+  const lengths = segments.map(segmentLength);
+  const totalLength = lengths.reduce((sum, length) => sum + length, 0);
+  if (totalLength <= 0) return { flown: segments.map(() => []), remaining: segments.map((segment) => [...segment]) };
+
+  const targetLength = totalLength * clamped;
+  const flown: ProjectedPoint[][] = [];
+  const remaining: ProjectedPoint[][] = [];
+  let consumed = 0;
+  let splitAt = -1;
+
+  segments.forEach((segment, i) => {
+    if (splitAt >= 0) {
+      flown.push([]);
+      remaining.push([...segment]);
+      return;
+    }
+    if (consumed + lengths[i]! <= targetLength) {
+      flown.push([...segment]);
+      remaining.push([]);
+      consumed += lengths[i]!;
+      return;
+    }
+    const split = splitSegment(segment, targetLength - consumed);
+    flown.push(split.flown);
+    remaining.push(split.remaining);
+    splitAt = i;
+  });
+
+  return { flown, remaining };
+}

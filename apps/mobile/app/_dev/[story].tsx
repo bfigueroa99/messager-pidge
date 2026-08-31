@@ -44,7 +44,10 @@ function FlightMapStory() {
   const segments = projectSegments(arcSegments(TOKYO, LAX), FLIGHT_MAP_VIEWPORT, 0.1);
   return (
     <View style={styles.screen} testID="ready">
-      <FlightMap segments={segments} viewport={FLIGHT_MAP_VIEWPORT} />
+      {/* 0.5: a fixed, deterministic progress that screenshots both the solid
+       * flown half and the dashed remaining half `M1-14` added, not just the
+       * all-solid route `M1-13` drew. */}
+      <FlightMap segments={segments} viewport={FLIGHT_MAP_VIEWPORT} progress={0.5} />
     </View>
   );
 }

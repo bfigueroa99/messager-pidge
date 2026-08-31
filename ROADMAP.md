@@ -826,9 +826,9 @@ screenshot pair, alongside the existing `index` story coverage)
 
 ---
 
-### [ ] M1-14 — Split the route into flown (solid) and remaining (dashed)
+### [x] M1-14 — Split the route into flown (solid) and remaining (dashed)
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-13
+**Status:** done · **Size:** S · **Depends on:** M1-13
 **Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`)
 
 **Why:** Split from `M1-05` (see its resolution note). `PRODUCT.md` §7 and the
@@ -849,13 +849,31 @@ chart itself, not only in the flight card's text.
 - Do not add any new visual element (bird marker, labels) — that is `M1-06`.
 
 **Acceptance criteria:**
-- [ ] at 40% elapsed, the solid portion covers 40% of the total projected
+- [x] at 40% elapsed, the solid portion covers 40% of the total projected
   route length
-- [ ] a flight whose arrival has passed renders entirely solid
-- [ ] a flight that has not yet departed renders entirely dashed
+- [x] a flight whose arrival has passed renders entirely solid
+- [x] a flight that has not yet departed renders entirely dashed
 
-**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`,
-`apps/mobile/src/ui/screens/FlightMap.test.tsx`
+**Resolution note:** the actual split math (`splitAtProgress`) landed in
+`packages/flight-sim/src/project.ts`, not inside `FlightMap.tsx` itself as
+the `Touches` line below originally assumed. `CLAUDE.md`'s layering rule is
+explicit that a component computing something — here, walking a polyline's
+cumulative screen-space length and linearly interpolating a split point —
+belongs in `flight-sim`, not in `apps/mobile`; `FlightMap.tsx` calls it and
+renders the result, computing nothing itself, matching the precedent
+`M1-12`/`M1-13` already set for this same file (`projectSegments`, not
+`FlightMap`, owns the projection math). `apps/mobile/app/_dev/[story].tsx`
+also needed a one-line update (a fixed `progress={0.5}`) since `FlightMap`'s
+`progress` prop is now required — a direct consequence of the "Do" line, not
+scope creep.
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts` (new
+`splitAtProgress`, not in the item's original `Touches` guess — see the
+resolution note), `apps/mobile/src/ui/screens/FlightMap.tsx`,
+`apps/mobile/src/ui/screens/FlightMap.test.tsx`,
+`apps/mobile/app/_dev/[story].tsx` (the `flight-map` dev story now passes a
+fixed `progress`, so it keeps typechecking and its screenshot demonstrates
+the solid/dashed split instead of the all-solid route `M1-13` drew).
 
 ---
 

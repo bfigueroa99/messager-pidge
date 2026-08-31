@@ -2274,3 +2274,135 @@ knowledge survives a context reset.
   `FlightMap.tsx`/`FlightMap.test.tsx`, not the `MapCanvas` split this
   iteration determined was unnecessary, so no `ROADMAP.md` correction was
   needed there.
+
+
+---
+
+## Iteration 24 — 2026-08-31 — M1-14
+
+- **Outcome:** done
+- **CI:** the previous tip (`0562be1`)'s only job completed in 2 seconds
+  (`created_at`/`completed_at` 00:33:16→00:33:18), the same never-scheduled
+  shape Q-003 documents — no runner assigned, no step output. Not this
+  iteration's item.
+- **Selection:** `iteration(24) - last_hardening_iteration(20) = 4 < 5`;
+  `iteration(24) - last_audit_iteration(21) = 3 < 10`. Neither override
+  fired. Topmost `todo` item with satisfied dependencies: `M1-14` (`M1-13`
+  done, so it was unblocked as of the last iteration).
+- **Verify:** typecheck ok · lint ok · 182 tests ok (+10) · flight-sim
+  coverage 98.93%/90% (aggregate; `project.ts` itself 97.89%/87.5%, both
+  above the 90%/85% gate) · `gate:roadmap` ok (22 done, 7 pending) ·
+  `gate:tests` ok (floor raised 172 → 182)
+- **What landed:** `FlightMap` gained a required `progress: number` prop —
+  `flightStateAt(plan, serverNow()).progress`, never `Date.now()`, matching
+  `M1-04`'s `FlightCard` pattern exactly as the item's "Do NOT" line asked.
+  The route now renders as a solid polyline per flown segment and a dashed
+  polyline (`strokeDasharray`) per remaining segment.
+  - **Where the split math actually landed:** the item's own `Touches` line
+    (written by the `M1-05` split iteration) named only `FlightMap.tsx`/
+    `FlightMap.test.tsx`, implying the flown/remaining split — walking a
+    polyline's cumulative screen-space length and linearly interpolating the
+    exact split point — should live inside the component. `CLAUDE.md`'s
+    layering rule is explicit and load-bearing: "if you are computing
+    something in a component, it belongs in flight-sim." This is exactly
+    that — pure arithmetic over `ProjectedPoint`s, no React, no ambient
+    clock, testable with plain Jest — and it is also exactly the precedent
+    `M1-12`/`M1-13` already set for this same file (`projectSegments` owns
+    the projection math; `FlightMap` only draws). Treated the stale
+    `Touches` line as underspecified rather than followed it literally (per
+    `docs/LOOP.md` §3's own guidance on this exact situation), and put
+    `splitAtProgress` in `packages/flight-sim/src/project.ts` beside
+    `projectSegments`, with its own six `[M1-14]` tests in `project.test.ts`.
+    `FlightMap.tsx` calls it and renders the result; it computes nothing
+    itself, same as before.
+  - **Segments are never merged in either output**, preserving `M1-12`'s
+    antimeridian guarantee: at most one input segment straddles the split
+    point and is split there; every other segment passes through whole to
+    whichever side (flown or remaining) it falls on. `FlightMap` filters out
+    any resulting segment with fewer than 2 points before rendering, so an
+    all-flown or all-dashed route (`progress` 1 or 0) still renders exactly
+    as many `<polyline>`s as `M1-13`'s original all-solid version did — the
+    three original `M1-13` component tests needed only a `progress={1}` prop
+    added, no assertion changes, to keep passing unmodified.
+  - `apps/mobile/app/_dev/[story].tsx`'s `flight-map` story now passes a
+    fixed `progress={0.5}` (required consequence of the prop becoming
+    non-optional, not scope creep) — its screenshot now shows the actual
+    solid/dashed split `M1-14` built, not the all-solid route `M1-13` left
+    behind. `tests/shot.test.ts`'s existing byte-identical-screenshot pair
+    for this story still passes: the story is still fully deterministic,
+    just visually different from before.
+  - **Self-review (`/code-review --effort high`) found two real issues, and
+    fixing the second one the way it was described almost introduced a
+    production crash — caught only because a regression test for the first
+    fix immediately failed and exposed why.** (1) The "is this whole segment
+    flown?" check used strict `<`, so a `progress` landing exactly on a
+    segment boundary was treated as straddling that segment rather than
+    passed through clean, producing a spurious near-zero-length polyline.
+    Changed `<` to `<=`. (2) `splitSegment`'s final `return { flown:
+    [...segment], remaining: [] }` — a fallback for "the loop never found a
+    split point" — showed as an uncovered line in the coverage report, and
+    the reviewer's traced reasoning for why it must be unreachable looked
+    airtight: `splitAtProgress` only ever calls `splitSegment` with a
+    `targetLength` it computed as `<=` the segment's own independently-summed
+    length, so the loop's own running `cumulative` must reach that same
+    total before falling off the end. Replaced the fallback with a `throw`,
+    documented as a "this cannot happen" assertion. **It was wrong.** Writing
+    the promised regression test (progress set to the exact fraction where
+    one segment ends and the next begins) failed immediately — not on the
+    boundary-fix assertion, but on the *next* segment, with a spurious
+    2-point sliver appearing where the test expected an empty array. Tracing
+    it: `targetLength` is `totalLength * progress` — one floating-point
+    computation — while `consumed`/`lengths[i]` are running sums of
+    per-point `Math.hypot` calls — a *different* floating-point computation
+    path over the same real distances. The two are not bit-exact, even
+    though they are mathematically equal. So the premise behind the throw —
+    that `targetLength - consumed` can never exceed the segment's own summed
+    length — does not actually hold; it can be violated by ordinary
+    accumulated rounding, in either direction, for a `progress` value with
+    no special significance at all. Had this shipped, some (unpredictable,
+    input-dependent) real progress value would have crashed `FlightMap`
+    instead of drawing a harmless one-pixel sliver. Reverted to the original
+    fallback — now documented as a deliberate clamp, explicitly citing
+    `projectSegments`' own out-of-range-`paddingRatio` clamp as the
+    established precedent for this exact class of problem — and deleted the
+    regression test that had exposed the danger, rather than chase
+    floating-point exactness a continuous, wall-clock-derived `progress`
+    will essentially never hit deterministically anyway. Kept the `<=` fix
+    itself, since it is harmless and marginally more correct at the
+    idealized (exact-arithmetic) boundary, even though no test can reliably
+    force that exact boundary in floating point.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **A self-review finding backed by a seemingly airtight coverage-driven
+    proof of "this branch is unreachable" is still a claim about runtime
+    behavior, not a mathematical fact, the moment two different
+    floating-point computation paths are involved.** `lengths[i]` (a
+    running sum of individual `Math.hypot` steps) and `targetLength`
+    (`totalLength * progress`, a single multiplication) compute the "same"
+    quantity two different ways; IEEE 754 does not guarantee these agree bit
+    for bit even when the underlying real-number math is identical. Treat
+    any "the two sides of this comparison are always equal/ordered" claim
+    that crosses two independently-computed floating-point values as
+    unproven until a targeted test actually exercises the boundary — and if
+    that test can't be written reliably (as here — dividing to find the
+    boundary and multiplying back rarely round-trips exactly), that
+    unreliability is itself the signal that a hard failure mode (a `throw`)
+    is the wrong response to that boundary, whatever the coverage tool says
+    about the branch being "dead."
+  - **This is the second time in this project that "the code the reviewer
+    called correct crashed when I actually tried to prove it" — always
+    write and run the regression test for a self-review fix before trusting
+    the fix, not after.** Running `pnpm run verify` immediately after the
+    throw change (rather than only after writing every planned change) is
+    what caught this within the same iteration instead of shipping it.
+  - **A roadmap item's `Touches` line, written by an earlier split iteration
+    before the actual implementation approach was decided, is a starting
+    guess, not a constraint** — this is now three items running (`M1-02`,
+    `M1-13`, `M1-14`) where the real `Touches` list differed from what was
+    written, always resolved by checking `CLAUDE.md`'s layering rule and the
+    precedent already set by sibling items in the same feature area, not by
+    the item's own prose.
+- **Follow-ups filed:** none new. `M1-06` (the flight screen) is now
+  unblocked — its own `Depends on` line already names `M1-14`, not the
+  `M1-05` split this and the two prior items replaced.
