@@ -4,14 +4,15 @@ import { join } from 'node:path';
 
 const ROOT = join(__dirname, '..');
 const SHOT_PNG = join(ROOT, 'artifacts', 'shots', 'index.png');
+const FLIGHT_MAP_SHOT_PNG = join(ROOT, 'artifacts', 'shots', 'flight-map.png');
 
-function runShot(): Buffer {
-  execFileSync('pnpm', ['run', 'shot', '--', 'index'], {
+function runShot(story: string, pngPath: string): Buffer {
+  execFileSync('pnpm', ['run', 'shot', '--', story], {
     cwd: ROOT,
     stdio: 'pipe',
     env: { ...process.env, CI: '1' },
   });
-  return readFileSync(SHOT_PNG);
+  return readFileSync(pngPath);
 }
 
 // Set by the first test below and read by the second, so a failure or an
@@ -34,7 +35,7 @@ describe('the app can be seen headlessly', () => {
       rmSync(SHOT_PNG, { force: true });
 
       const start = Date.now();
-      firstRunPng = runShot();
+      firstRunPng = runShot('index', SHOT_PNG);
       const elapsedMs = Date.now() - start;
 
       expect(existsSync(SHOT_PNG)).toBe(true);
@@ -65,7 +66,7 @@ describe('the app can be seen headlessly', () => {
           'firstRunPng is unset — the previous test must run first and succeed',
         );
       }
-      const second = runShot();
+      const second = runShot('index', SHOT_PNG);
 
       expect(Buffer.compare(firstRunPng, second)).toBe(0);
     },
@@ -82,4 +83,32 @@ describe('the app can be seen headlessly', () => {
     // doesn't fail with "executable doesn't exist".
     expect(workflow).toMatch(/playwright install --with-deps chromium/);
   });
+});
+
+/**
+ * `[M1-13]` The chart is the first `_dev` story that draws anything beyond
+ * plain text (`FlightMap`, a Tokyo-LA route chosen specifically to cross the
+ * antimeridian). Reuses `pnpm run shot`'s same byte-identical-under-a-frozen-clock
+ * guarantee `M0-08` already established for the `index` story, applied to a
+ * second one, rather than trusting that guarantee generalizes untested.
+ */
+describe('the chart can be seen headlessly', () => {
+  let firstFlightMapPng: Buffer | undefined;
+
+  it(
+    '[M1-13] two consecutive frozen-clock screenshots of the drawn route are byte-identical',
+    () => {
+      rmSync(FLIGHT_MAP_SHOT_PNG, { force: true });
+
+      firstFlightMapPng = runShot('flight-map', FLIGHT_MAP_SHOT_PNG);
+      expect(existsSync(FLIGHT_MAP_SHOT_PNG)).toBe(true);
+      expect(statSync(FLIGHT_MAP_SHOT_PNG).size).toBeGreaterThan(0);
+
+      const second = runShot('flight-map', FLIGHT_MAP_SHOT_PNG);
+      expect(Buffer.compare(firstFlightMapPng, second)).toBe(0);
+    },
+    // Two full pipeline runs back to back — same per-run ceiling as the
+    // `index` story's own test above, doubled.
+    960_000,
+  );
 });

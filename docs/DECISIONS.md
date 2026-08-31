@@ -184,3 +184,47 @@ it with a new one.
   file); `deno bundle` (deprecated, and this container has no Deno installed
   to run it from — `esbuild` runs under plain Node, which this repo already
   requires).
+
+## ADR-011 — Map renderer: `react-native-svg`, resolving ADR-007
+
+- **Date:** 2026-08-31 · **Iteration:** 23 · **Status:** accepted (this entry
+  supersedes ADR-007's "proposed" status; ADR-007 is left as written above per
+  this file's own append-only rule).
+- **Context:** ADR-007 proposed `expo-maps` behind a
+  `MapCanvas.{ios,android,web}.tsx` split, but flagged its own context as the
+  open question: "`expo-maps` ... has no web target — and the web target is
+  the only thing this container can screenshot." `M1-13` is the item that had
+  to actually resolve this, now that `M1-12` provides fit-to-viewport screen
+  points to draw. Confirmed directly rather than taken on faith: `expo-maps`
+  ships no web build at all, so any acceptance criterion phrased as "two
+  consecutive frozen-clock screenshots" (this item's own first criterion)
+  would be permanently unverifiable in this container regardless of how the
+  native side turned out — `CLAUDE.md`'s "the UI cannot be verified by
+  running it" already means the headless web path (`M0-08`/ADR-008) is not
+  one verification option among several, it is the only one that exists here.
+- **Decision:** `react-native-svg` (`~15.15.0`), one platform-agnostic
+  `FlightMap.tsx` component — no `MapCanvas.{ios,android,web}.tsx` split,
+  because there turned out to be nothing to split: `react-native-svg` ships
+  its own genuine web target (confirmed directly — `src/elements.web.ts`,
+  `src/web/WebShape.ts` — rendering real DOM `<svg>`/`<polyline>` elements
+  under `react-native-web`, the same renderer `ADR-008`'s component tests
+  already exercise), so the same component tree runs unmodified on iOS,
+  Android and web. `FlightMap` takes `M1-12`'s already-`projectSegments()`-ed
+  points as props and draws one `<Polyline>` per input segment — it computes
+  nothing itself, per `CLAUDE.md`'s layering rule.
+- **Consequences:** no API key, no map-provider account, and no native map
+  SDK to configure — the chart is vector shapes drawn from data this app
+  already owns, matching PRODUCT.md §7's "a chart, not Apple Maps." Dashed
+  strokes (`M1-14`'s flown/remaining split) are a native SVG
+  `strokeDasharray`, not a workaround. Cost: no real coastlines, borders or
+  place names are available for free the way a map-tile provider would give
+  them — acceptable, since `M1-13`'s own "Do NOT" list already rules out city
+  labels, roads and traffic. Native-platform behaviour (gesture handling,
+  Fabric rendering) still cannot be verified in this container regardless of
+  library choice, the same limitation `CLAUDE.md` already states for every
+  other component in `apps/mobile`.
+- **Rejected:** `expo-maps` (no web target — see Context; this alone was
+  disqualifying given `M0-08`'s constraint, independent of its native-side
+  merits); `react-native-maps` (ADR-007's own context: partial Fabric
+  support, and Expo SDK 57 is bridgeless-only per `M0-07`'s note, so there is
+  no legacy-architecture fallback to drop back to).

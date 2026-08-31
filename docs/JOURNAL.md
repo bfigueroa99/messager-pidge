@@ -2163,3 +2163,114 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. `M1-13` (renderer decision + static draw) and
   `M1-14` (flown/dashed split) are already on `ROADMAP.md` from the `M1-05`
   split and are unaffected by anything found here.
+
+---
+
+## Iteration 23 — 2026-08-31 — M1-13
+
+- **Outcome:** done
+- **CI:** the most recent 15+ runs on the previous tip (`33b5740`) all
+  completed in 2-4 seconds via `mcp__github__actions_list`/`list_workflow_jobs`
+  (job `99257446621`: created 12:28:13, completed 12:28:15), the same
+  never-scheduled shape Q-003 documents — no runner assigned, no step output.
+  Not this iteration's item.
+- **Selection:** `iteration(23) - last_hardening_iteration(20) = 3 < 5`;
+  `iteration(23) - last_audit_iteration(21) = 2 < 10`. Neither override fired.
+  Topmost `todo` item with satisfied dependencies: `M1-13` (`M1-05` is
+  `split`, not `todo`; `M1-14` depends on `M1-13` itself and so is not yet
+  unblocked).
+- **Verify:** typecheck ok · lint ok · 172 tests ok (+4) · flight-sim coverage
+  99.56%/90.62% (unchanged — this item touched no `packages/flight-sim` code,
+  only its existing public exports) · `gate:roadmap` ok (21 done, 8 pending)
+  · `gate:tests` ok (floor raised 168 → 172)
+- **What landed:** `apps/mobile/src/ui/screens/FlightMap.tsx` — a
+  platform-agnostic component drawing `M1-12`'s `projectSegments()` output as
+  one `react-native-svg` `<Polyline>` per input segment over a `chartWater`
+  background, on a canvas sized to the given `Viewport`. It computes nothing
+  itself: no projection, no fitting, no antimeridian logic — purely
+  presentation over already-computed points, per `CLAUDE.md`'s layering rule.
+  Wired into the `M0-08` dev-story harness as a new `flight-map` story
+  (Tokyo→LA, chosen specifically because it crosses the antimeridian) and
+  into `tests/shot.test.ts` alongside the existing `index` story's
+  byte-identical-screenshot coverage.
+  - **The renderer decision (ADR-007's open question):** evaluated
+    `expo-maps` against a bundled `react-native-svg` chart, as the item's own
+    "Do" line asked. `expo-maps` was disqualified on one fact alone, checked
+    directly rather than assumed: it ships no web build, and this container's
+    headless-browser path (`M0-08`) is not one verification option among
+    several — `CLAUDE.md` is explicit that it is the *only* way this UI can
+    ever be verified here. Any acceptance criterion phrased as "two
+    consecutive frozen-clock screenshots" would have been permanently
+    unverifiable with `expo-maps` regardless of how well it worked natively.
+    `react-native-svg` ships a genuine second target for exactly this
+    (`src/elements.web.ts`, confirmed by reading the installed package, not
+    inferred from its README) — real DOM `<svg>`/`<polyline>` elements under
+    `react-native-web`, the same rendering path `ADR-008`'s component tests
+    already exercise. Recorded as ADR-011 rather than as an edit to ADR-007
+    itself — `docs/DECISIONS.md`'s own preamble is append-only ("never edit
+    or delete an entry"), which the item's own "Do" line ("record the
+    outcome as an update to ADR-007") did not anticipate; ADR-011's header
+    says plainly what it supersedes, and ADR-007 is left exactly as written.
+  - **No `MapCanvas.{ios,android,web}.tsx` split** — the `ROADMAP.md` item's
+    own `Touches` line assumed one, inherited from ADR-007's `expo-maps`
+    proposal (which genuinely would have needed per-platform native
+    components). Once the decision changed to `react-native-svg`, the split
+    had nothing to do: the same `FlightMap.tsx` component tree runs
+    unmodified on iOS, Android and web, so introducing a platform-file split
+    with no actual platform divergence would have been an abstraction with
+    no reason to exist. `ROADMAP.md`'s `Touches` line was corrected to match
+    what was actually built, per the pattern `M1-03`/`M1-11` already
+    established for a plan that changed shape once real constraints were
+    checked.
+  - Self-review (`/code-review --effort high`) found no correctness issues.
+    Two style nits were noted but not fixed (below cost/value line for a
+    fresh diff, not pre-existing debt): the Tokyo/LAX coordinate pair is now
+    duplicated across `_dev/[story].tsx` and `FlightMap.test.tsx` (both
+    already comment that they intentionally duplicate
+    `packages/flight-sim/src/__fixtures__/cities.ts` rather than import a
+    test-only fixture across the package boundary — a third duplication site
+    is a legitimate "extract a shared mobile fixture" candidate for a future
+    hardening pass, not urgent enough to justify touching test files outside
+    this item's own diff mid-iteration); `tests/shot.test.ts`'s
+    `firstFlightMapPng` is declared at `describe` scope but used only inside
+    the one `it` beneath it (harmless, matches the file's own pre-existing
+    `firstRunPng` pattern one block up, so leaving it keeps the file
+    internally consistent rather than fixing one occurrence and not the
+    other).
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **A Tokyo→LA route rendered through `projectSegments`'s
+    longitude-unwrapping does not look "split" at all — it looks like one
+    smooth, continuous arc.** This is correct, not a bug: the whole point of
+    unwrapping is that the two geographically-adjacent halves of the route
+    (one ending near +180°, the other starting near −180°) become adjacent
+    again in projected screen space once one of them gets a +360°/−360°
+    offset. The acceptance criterion "no line connecting across the seam" is
+    proved structurally, not visually — `FlightMap.test.tsx` asserts there
+    are exactly as many `<polyline>` DOM elements as input segments, each
+    with its own independent `points` list, rather than trying to eyeball a
+    gap in a screenshot that will not actually show one. Do not mistake a
+    smooth-looking chart for evidence the antimeridian logic did nothing —
+    check the DOM structure, not the pixels, for this specific guarantee.
+  - **Checking a native-support claim by reading the installed package's own
+    source tree (`src/elements.web.ts` existing on disk) is meaningfully
+    different from trusting a library's README or its popularity.** ADR-007
+    had already been burned once by an unverified assumption about a
+    library's platform support (`expo-maps` "has no web target" was itself
+    stated as fact in ADR-007's own context, presumably from prior
+    research) — this iteration re-confirmed react-native-svg's web
+    support the same direct way rather than compounding one unverified
+    claim with another.
+  - **`docs/DECISIONS.md`'s append-only rule and an individual roadmap
+    item's own "Do" instructions can conflict**, and when they do, the
+    file-level convention wins — `M1-13`'s text explicitly said "update
+    ADR-007," but doing that literally would have violated the log's own
+    stated invariant. Worth checking `docs/DECISIONS.md`'s preamble before
+    following any future item's "update ADR-N" instruction literally.
+- **Follow-ups filed:** none new. `M1-14` (flown/dashed split) is already on
+  `ROADMAP.md` from the `M1-05` split, is now unblocked (`M1-13` done), and
+  can consume `FlightMap.tsx` directly — its own `Touches` line already named
+  `FlightMap.tsx`/`FlightMap.test.tsx`, not the `MapCanvas` split this
+  iteration determined was unnecessary, so no `ROADMAP.md` correction was
+  needed there.

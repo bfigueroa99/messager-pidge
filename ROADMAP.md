@@ -770,9 +770,9 @@ not depend on which renderer `M1-13` picks — `react-native-svg`, MapLibre and
 
 ---
 
-### [ ] M1-13 — Decide the renderer (ADR-007) and draw the static route
+### [x] M1-13 — Decide the renderer (ADR-007) and draw the static route
 
-**Status:** in-progress · **Size:** M · **Depends on:** M1-12, M0-08
+**Status:** done · **Size:** M · **Depends on:** M1-12, M0-08
 **Read first:** `docs/DECISIONS.md` ADR-007
 
 **Why:** Split from `M1-05` (see its resolution note). This is the item that
@@ -799,15 +799,30 @@ screenshot.
 - Do not implement the flown/dashed split yet — that is `M1-14`.
 
 **Acceptance criteria:**
-- [ ] two consecutive frozen-clock screenshots of the drawn route are
+- [x] two consecutive frozen-clock screenshots of the drawn route are
   byte-identical
-- [ ] the rendered component keeps a Tokyo to LA route's two segments visually
+- [x] the rendered component keeps a Tokyo to LA route's two segments visually
   separated, with no line connecting across the seam
 
-**Touches:** `docs/DECISIONS.md` (ADR-007),
-`apps/mobile/src/ui/screens/FlightMap.tsx`,
-`apps/mobile/src/ui/screens/MapCanvas.{ios,android,web}.tsx`,
-`apps/mobile/app/_dev/[story].tsx`
+**Resolution note:** ADR-007 said "record the outcome as an update to
+ADR-007" — but `docs/DECISIONS.md`'s own preamble is append-only ("never edit
+or delete an entry — supersede it with a new one"), so the decision landed as
+a new entry, ADR-011, rather than an edit to ADR-007 itself (ADR-007 is left
+exactly as written, and ADR-011's own header notes what it supersedes). The
+decision itself also came out differently than ADR-007's proposal: no
+`MapCanvas.{ios,android,web}.tsx` split, because `react-native-svg` (chosen
+over `expo-maps` specifically because `expo-maps` has no web target — see
+ADR-011) ships one real web target already, so one platform-agnostic
+`FlightMap.tsx` runs on iOS, Android and web unmodified with nothing to
+split.
+
+**Touches:** `docs/DECISIONS.md` (ADR-011),
+`apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`,
+`apps/mobile/app/_dev/[story].tsx` (a new `flight-map` story),
+`apps/mobile/package.json` (`react-native-svg` dependency — new runtime
+dependency, ADR required, satisfied by ADR-011 itself), `pnpm-lock.yaml`,
+`tests/shot.test.ts` (extended with the new story's byte-identical
+screenshot pair, alongside the existing `index` story coverage)
 
 ---
 
