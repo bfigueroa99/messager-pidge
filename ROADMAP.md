@@ -828,7 +828,7 @@ screenshot pair, alongside the existing `index` story coverage)
 
 ### [ ] M1-14 — Split the route into flown (solid) and remaining (dashed)
 
-**Status:** todo · **Size:** S · **Depends on:** M1-13
+**Status:** in-progress · **Size:** S · **Depends on:** M1-13
 **Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`)
 
 **Why:** Split from `M1-05` (see its resolution note). `PRODUCT.md` §7 and the
