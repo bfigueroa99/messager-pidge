@@ -772,7 +772,7 @@ not depend on which renderer `M1-13` picks — `react-native-svg`, MapLibre and
 
 ### [ ] M1-13 — Decide the renderer (ADR-007) and draw the static route
 
-**Status:** todo · **Size:** M · **Depends on:** M1-12, M0-08
+**Status:** in-progress · **Size:** M · **Depends on:** M1-12, M0-08
 **Read first:** `docs/DECISIONS.md` ADR-007
 
 **Why:** Split from `M1-05` (see its resolution note). This is the item that
