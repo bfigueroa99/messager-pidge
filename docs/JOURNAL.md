@@ -2406,3 +2406,154 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none new. `M1-06` (the flight screen) is now
   unblocked — its own `Depends on` line already names `M1-14`, not the
   `M1-05` split this and the two prior items replaced.
+
+---
+
+## Iteration 25 — 2026-09-01 — HARDENING
+
+- **Outcome:** done
+- **CI:** the 20+ most recent runs on the previous tip (`dab7d9e`) all
+  completed in 2-4 seconds (job `99493828704`: created/completed
+  12:52:20→12:52:23 UTC) via `mcp__github__actions_list`/`list_workflow_jobs`,
+  the same never-scheduled shape `Q-003` documents — no runner assigned, no
+  step output. Not this iteration's item.
+- **Selection:** `iteration(25) - last_hardening_iteration(20) = 5 >= 5` — the
+  hardening override fires. `iteration(25) - last_audit_iteration(21) = 4 <
+  10`, so not an audit. HARDENING per `docs/LOOP.md` §6.
+- **Verify:** typecheck ok · lint ok · 182 tests ok (unchanged — a pure
+  refactor pass adds no test) · flight-sim coverage 98.93%/90% aggregate
+  (`project.ts` itself 97.87%/87.5%, both still above the 90%/85% gate) ·
+  `gate:roadmap` ok (23 done, 6 pending) · `gate:tests` ok (floor unchanged
+  at 182)
+- **What landed:** worked `docs/LOOP.md` §6's checklist against the diff
+  accumulated since the last hardening pass (`1c2d67c..dab7d9e`, ~700 lines
+  across `M1-12`, `M1-13`, `M1-14`; the intervening `AUDIT: iteration 21`
+  touched no code):
+  1. Ticked-without-a-test criteria: none — `gate:roadmap` already ok.
+  2. Dead code: `npx knip` repeated the same findings iteration 20 already
+     triaged and left alone (the four unused files — Edge Function entry
+     points and script-only modules `knip` can't trace — `expo-font`, the
+     phantom `expo-updates` dependency, `jest.config.js`'s projects
+     shorthand, and `tokens.ts`/`typography.ts`'s forward-built `RADII`/
+     `DURATIONS_MS`/`LINE_HEIGHT_RATIO` still waiting on `M1-07`). Nothing
+     new since the last pass.
+  3. `/simplify` (4 parallel agents — reuse, simplification, efficiency,
+     altitude — against the `1c2d67c..dab7d9e` diff): all fixed except one
+     deliberately deferred and one deliberately skipped (below).
+     - **Reuse:** `project.ts`'s `paddingRatio` clamp (`projectSegments`) and
+       `progress` clamp (`splitAtProgress`) each hand-rolled
+       `Math.min(Math.max(v, lo), hi)` instead of calling `clamp(v, lo, hi)`,
+       already exported from `speed.ts` and already reused by `hazard.ts`.
+       Both now call `clamp`.
+     - **Simplification:** `splitAtProgress`'s three early-return branches
+       (`progress` clamped to `1`, clamped to `0`, and the degenerate
+       `totalLength <= 0` case) shared one identical pass-through shape
+       written out three times. Extracted `allFlown`/`allRemaining` helpers,
+       one line each, called from all three sites.
+     - **Simplification:** `FlightMap.tsx`'s `flown.map(...)` and
+       `remaining.map(...)` JSX blocks were copy-paste with only the
+       `strokeDasharray` prop and key prefix differing. Extracted one
+       `renderPolylines(segmentsList, keyPrefix, strokeDasharray?)` helper,
+       called once per side.
+     - **Efficiency:** `splitAtProgress` spread every pass-through segment
+       into a new array (`[...segment]`) on every call, even though the
+       input is already `readonly` and no consumer mutates the result.
+       Dropped the copies — pass-through segments (and, in the two new
+       all-flown/all-remaining helpers, `segments` itself) are now returned
+       by reference. Verified by tracing every consumer (`FlightMap.tsx`,
+       `project.test.ts`): none mutate what they receive, so this is a pure
+       allocation reduction, not an aliasing risk — worth having decided
+       before this function gains a hot-path caller in `M1-06` (re-running
+       once per second, or per frame, once a real flight screen exists).
+     - **Efficiency, deliberately skipped:** the same agent also flagged
+       `tests/shot.test.ts` running its four `pnpm run shot` invocations
+       sequentially rather than in parallel, roughly doubling that file's
+       wall-clock time since `M1-13` added the `flight-map` story alongside
+       `M0-08`'s original `index` story. Left alone: CI isn't actually
+       scheduled today (`Q-003`), so there's no wall-clock pressure this
+       would relieve, and parallelizing `execFileSync` calls that each boot
+       a headless browser risks port contention this pass had no budget to
+       verify is actually safe. Not fixed, not filed — a real future
+       candidate if CI ever starts running for real and this file's runtime
+       becomes a cost anyone feels.
+     - **Altitude, deliberately deferred, not fixed:** the altitude agent
+       found that `splitAtProgress` splits the drawn route at a fraction of
+       *projected screen-space polyline length* (exactly what `M1-14`'s own
+       acceptance criteria asked for), while `flightStateAt`'s `progress`
+       is an elapsed-*time* fraction, and the bird's real position (via
+       `geo.ts`'s `interpolate`) is a fraction of great-circle *angle* —
+       sampled unevenly by `arcSegments`/`densify`, then non-uniformly
+       warped again by `projectSegments`' affine screen fit. On a route
+       with real curvature, "40% of pixel length" and "where `interpolate`
+       actually puts the bird at 40% elapsed" are different points on the
+       line. This is invisible today only because `M1-14` draws no bird
+       marker to compare against — `M1-13`'s own "Do NOT" line explicitly
+       deferred that to `M1-06`. Not fixed here: doing so would change the
+       already-shipped, already-tested behaviour `M1-14`'s own acceptance
+       criteria literally specify (`project.test.ts`'s `[M1-14]` tests
+       assert the pixel-length split directly), which is exactly the kind
+       of change a hardening pass should not make unilaterally — "adding a
+       feature" and "changing a shipped, specified behaviour" are close
+       enough cousins here that this reads as the latter. Documented instead
+       as a `Read first`/`Note` on `M1-06` in `ROADMAP.md`, so whoever builds
+       the bird marker checks the two against each other before shipping,
+       rather than rediscovering the same drift the hard way.
+  4. Coverage: unchanged, already above threshold — no action.
+  5. `any`/`@ts-ignore`/`TODO`/`FIXME`: grepped the real `.ts`/`.tsx` source
+     tree directly for the literal tokens (not prose use of the English word
+     "any", which several files legitimately contain) — none found, same as
+     iteration 20.
+  6. Dependencies without an ADR: none new since the last hardening pass —
+     the only `package.json`/`pnpm-lock.yaml` change in the diffed range is
+     `react-native-svg`, added by `M1-13` with `ADR-011` in the same commit.
+  - Self-review (`/code-review --effort high`) on the four applied fixes: no
+    findings. Traced every consumer of the now-by-reference pass-through
+    arrays and confirmed byte-identical `pnpm run verify` output, including
+    `tests/shot.test.ts`'s screenshot pairs for both stories — the
+    `FlightMap.tsx` refactor (`strokeDasharray={undefined}` on the flown
+    side, where the prop used to be omitted entirely) renders pixel-identical
+    output, confirmed by the existing byte-identical-screenshot tests passing
+    unchanged rather than assumed from React's prop semantics alone.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **A hardening pass's own review agents can surface a real design gap
+    that isn't a reuse/simplification/efficiency fix at all — it's a
+    'the shipped behaviour matches its own spec, but that spec has a
+    latent assumption a future item will violate' finding.** The altitude
+    agent's progress-semantics gap is not wrong code by `M1-14`'s own
+    criteria; it is a criteria choice (`split by projected length`) that
+    happens to coincide with `flightStateAt`'s progress only on a route with
+    no curvature. Treat this class of finding as "leave the code, annotate
+    the next consumer" rather than either fixing it unilaterally (changes
+    tested, specified behaviour outside this pass's mandate) or discarding
+    it (the gap is real and `M1-06` will hit it).
+  - **Passing `strokeDasharray={undefined}` explicitly, versus omitting the
+    prop entirely, is safe to treat as equivalent for `react-native-svg`'s
+    web target — but only because this pass actually re-ran the
+    byte-identical screenshot tests rather than assumed it from React's
+    general "undefined prop = omitted attribute" convention.** Worth
+    re-confirming this the same way (a real screenshot diff, not an
+    assumption) if a future refactor threads an optional SVG prop through a
+    shared helper again.
+  - **`Math.min(Math.max(v, lo), hi)` is the exact shape `speed.ts`'s
+    `clamp` exists to replace, and it can reappear even in files that
+    already cite `clamp`'s sibling function (`interpolate`) as their design
+    precedent in a comment** — `project.ts`'s own comment for the
+    `paddingRatio` clamp explicitly named `interpolate`'s clamping behaviour
+    as the pattern being followed, yet reimplemented the arithmetic instead
+    of importing the one function that already does it. Worth grepping for
+    the literal `Math.min(Math.max(` shape across a package before writing
+    a new clamp by hand, not just checking that *a* clamp exists somewhere.
+  - **`docs/LOOP.md` §6 is written as "no new features," but doesn't say
+    "no documentation-only edits to a `todo` item's own roadmap entry"** —
+    adding the `M1-06` note above changes zero code and zero acceptance
+    criteria, so it isn't scope creep the way the `M1-14`/`M1-06` boundary
+    line worries about; treat "annotate a future item with a finding this
+    pass surfaced" as compatible with a hardening iteration, not a violation
+    of it.
+- **Follow-ups filed:** none as new `ROADMAP.md` items. The progress-semantics
+  gap is recorded as a `Note` on the existing `M1-06` entry rather than a new
+  item, since `M1-06` is the first (and only) place it can actually be
+  checked against a real bird marker — a standalone item today would have
+  nothing to verify against yet.

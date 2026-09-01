@@ -881,9 +881,30 @@ the solid/dashed split instead of the all-solid route `M1-13` drew).
 
 **Status:** todo · **Size:** L (**split this before starting**)
 **Depends on:** M1-04, M1-14
+**Read first:** `packages/flight-sim/src/project.ts` (`splitAtProgress`) — see
+the note below before wiring up the bird marker.
 
 **Why:** This is the screenshot people send their friends. It is the entire
 marketing budget.
+
+**Note (found by the iteration 25 hardening pass's altitude review, not yet
+fixed):** `splitAtProgress` currently splits the drawn route at `progress`
+fraction of the *projected screen-space polyline length*, per `M1-14`'s own
+acceptance criteria. But `flightStateAt`'s `progress` is an elapsed-*time*
+fraction, and the bird's actual position (via `geo.ts`'s `interpolate`,
+angular slerp) is a fraction of great-circle *angle*, sampled unevenly by
+`arcSegments`/`densify` and then non-uniformly warped by `projectSegments`'
+affine screen projection. On a route with any curvature or an
+antimeridian split, "40% of pixel length" and "where `interpolate` actually
+puts the bird at 40% elapsed" are two different points on the line — a gap
+invisible today only because `M1-14` never draws a bird marker to compare
+against. When this item adds the marker, check whether the solid/dashed
+split point visibly disagrees with the marker's position; if so, either
+derive the split point from the same geo-space `interpolate` call the
+marker itself uses (project that one point, rather than re-deriving a
+screen-space length fraction), or file a follow-up rather than let the two
+silently drift apart — INV-6 (`docs/PRODUCT.md` §3) is about exactly this
+kind of decoupling.
 
 **Do:** full-bleed chart, the title, the flight card, the bird driven by
 `flightStateAt(plan, serverNow())` — a frame loop for the marker, 1 Hz for the

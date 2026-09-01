@@ -24,6 +24,27 @@ function toPointsAttr(points: readonly ProjectedPoint[]): string {
   return points.map((point) => `${point.x},${point.y}`).join(' ');
 }
 
+/** One `<Polyline>` per segment with at least 2 points; degenerate segments render nothing. */
+function renderPolylines(
+  segmentsList: readonly (readonly ProjectedPoint[])[],
+  keyPrefix: string,
+  strokeDasharray?: string,
+) {
+  return segmentsList.map(
+    (points, index) =>
+      points.length >= 2 && (
+        <Polyline
+          key={`${keyPrefix}-${index}`}
+          points={toPointsAttr(points)}
+          fill="none"
+          stroke={COLORS.bird}
+          strokeWidth={2}
+          strokeDasharray={strokeDasharray}
+        />
+      ),
+  );
+}
+
 /**
  * `[M1-13]`/`[M1-14]` The chart. Pure presentation over already-projected
  * screen coordinates and a progress fraction — it takes points and a number
@@ -45,25 +66,8 @@ export function FlightMap({ segments, viewport, progress }: FlightMapProps) {
     <View style={styles.container} testID="flight-map">
       <Svg width={viewport.width} height={viewport.height}>
         <Rect x={0} y={0} width={viewport.width} height={viewport.height} fill={COLORS.chartWater} />
-        {flown.map(
-          (points, index) =>
-            points.length >= 2 && (
-              <Polyline key={`flown-${index}`} points={toPointsAttr(points)} fill="none" stroke={COLORS.bird} strokeWidth={2} />
-            ),
-        )}
-        {remaining.map(
-          (points, index) =>
-            points.length >= 2 && (
-              <Polyline
-                key={`remaining-${index}`}
-                points={toPointsAttr(points)}
-                fill="none"
-                stroke={COLORS.bird}
-                strokeWidth={2}
-                strokeDasharray={REMAINING_DASH_PATTERN}
-              />
-            ),
-        )}
+        {renderPolylines(flown, 'flown')}
+        {renderPolylines(remaining, 'remaining', REMAINING_DASH_PATTERN)}
       </Svg>
     </View>
   );

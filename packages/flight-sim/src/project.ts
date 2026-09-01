@@ -1,3 +1,4 @@
+import { clamp } from './speed';
 import type { LatLng } from './types';
 
 /** Pixel dimensions of the surface the route is drawn into. */
@@ -72,7 +73,7 @@ export function projectSegments(
   // `f` in geo.ts. An out-of-range ratio (>= 0.5 leaves nothing to draw into,
   // negative reserves no margin at all) would otherwise flip or collapse the
   // whole route instead of merely under- or over-padding it.
-  const clampedPaddingRatio = Math.min(Math.max(paddingRatio, 0), 0.49);
+  const clampedPaddingRatio = clamp(paddingRatio, 0, 0.49);
   const drawableWidth = viewport.width * (1 - 2 * clampedPaddingRatio);
   const drawableHeight = viewport.height * (1 - 2 * clampedPaddingRatio);
   // A single shared scale for both axes — an independent x/y scale would
@@ -96,6 +97,16 @@ export interface ProgressSplitSegments {
   readonly flown: readonly (readonly ProjectedPoint[])[];
   /** The portion of each segment not yet flown, from the split point on. */
   readonly remaining: readonly (readonly ProjectedPoint[])[];
+}
+
+/** `segments`, passed through unchanged as the flown side; empty on the remaining side. */
+function allFlown(segments: readonly (readonly ProjectedPoint[])[]): ProgressSplitSegments {
+  return { flown: segments, remaining: segments.map(() => []) };
+}
+
+/** `segments`, passed through unchanged as the remaining side; empty on the flown side. */
+function allRemaining(segments: readonly (readonly ProjectedPoint[])[]): ProgressSplitSegments {
+  return { flown: segments.map(() => []), remaining: segments };
 }
 
 function distance(a: ProjectedPoint, b: ProjectedPoint): number {
@@ -160,29 +171,29 @@ export function splitAtProgress(
   segments: readonly (readonly ProjectedPoint[])[],
   progress: number,
 ): ProgressSplitSegments {
-  const clamped = Math.min(Math.max(progress, 0), 1);
+  const clamped = clamp(progress, 0, 1);
 
-  if (clamped >= 1) return { flown: segments.map((segment) => [...segment]), remaining: segments.map(() => []) };
-  if (clamped <= 0) return { flown: segments.map(() => []), remaining: segments.map((segment) => [...segment]) };
+  if (clamped >= 1) return allFlown(segments);
+  if (clamped <= 0) return allRemaining(segments);
 
   const lengths = segments.map(segmentLength);
   const totalLength = lengths.reduce((sum, length) => sum + length, 0);
-  if (totalLength <= 0) return { flown: segments.map(() => []), remaining: segments.map((segment) => [...segment]) };
+  if (totalLength <= 0) return allRemaining(segments);
 
   const targetLength = totalLength * clamped;
-  const flown: ProjectedPoint[][] = [];
-  const remaining: ProjectedPoint[][] = [];
+  const flown: (readonly ProjectedPoint[])[] = [];
+  const remaining: (readonly ProjectedPoint[])[] = [];
   let consumed = 0;
   let splitAt = -1;
 
   segments.forEach((segment, i) => {
     if (splitAt >= 0) {
       flown.push([]);
-      remaining.push([...segment]);
+      remaining.push(segment);
       return;
     }
     if (consumed + lengths[i]! <= targetLength) {
-      flown.push([...segment]);
+      flown.push(segment);
       remaining.push([]);
       consumed += lengths[i]!;
       return;
