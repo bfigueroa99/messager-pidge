@@ -2557,3 +2557,119 @@ knowledge survives a context reset.
   item, since `M1-06` is the first (and only) place it can actually be
   checked against a real bird marker — a standalone item today would have
   nothing to verify against yet.
+
+---
+
+## Iteration 26 — 2026-09-01 — M1-06 split
+
+- **Outcome:** done (a split, not a feature — see below)
+- **CI:** the 3 most recent runs on the previous tip (`2215ec3`) all
+  completed in 3-4 seconds (job `99692949665`: created/completed
+  00:29:59→00:30:02 UTC) via `mcp__github__actions_list`/`get_job_logs` —
+  no `runner_id`/`runner_name`, and `get_job_logs` returns a bare HTTP 404
+  rather than any log content, the same never-scheduled shape `Q-003`
+  documents. Not this iteration's item.
+- **Selection:** `iteration(26) - last_hardening_iteration(25) = 1 < 5`;
+  `iteration(26) - last_audit_iteration(21) = 5 < 10`. Neither override
+  fired. Topmost `todo` item with satisfied dependencies: `M1-06` (`M1-04`
+  and `M1-14` both `done`). Size `L`, flagged "split this before starting"
+  in its own heading — the size override in `docs/LOOP.md` §2 fires: split
+  it, and the split *is* the iteration.
+- **Verify:** typecheck ok · lint ok · 182 tests ok (unchanged — a roadmap
+  edit adds no test) · flight-sim coverage unchanged (98.93%/90% aggregate,
+  both above threshold) · `gate:roadmap` ok (23 done, 9 pending — was 6
+  pending before the split; the one `L` item became three `todo` items plus
+  itself turning `split`, net +3) · `gate:tests` ok (floor unchanged at 182)
+- **What landed:** `M1-06` ("The flight screen") replaced by three items, in
+  dependency order:
+  - **`M1-15`** (S) — a pure `packages/flight-sim/src/project.ts` function
+    (`projectPoint`) that projects a single `LatLng` (`flightStateAt`'s own
+    `position` field) through the identical fit `projectSegments` already
+    computes for the drawn route, rather than re-deriving a second
+    independent scale/origin. This is also where the iteration 25 hardening
+    pass's unfixed altitude finding gets resolved: that pass found that
+    `splitAtProgress` (`M1-14`) splits the drawn route at a fraction of
+    *projected screen-space polyline length*, while the bird's real position
+    is a fraction of great-circle *angle* via `interpolate` — the two only
+    coincide on a dead-straight route, and the gap was invisible until
+    something actually draws a marker to compare against. `M1-15` is that
+    something: the marker's own position now comes from `flightStateAt`'s
+    real `position`, never from re-deriving a screen-space length fraction
+    the way `splitAtProgress` does for the flown/dashed line (which is left
+    untouched — its own `M1-14` tests still assert the pixel-length split
+    directly, and changing that shipped behaviour was explicitly out of
+    scope for a hardening pass, not for this one). Carries three criteria:
+    the two position-accuracy criteria from `M1-06`'s original five (40%
+    elapsed-time accuracy, one-hour-advance delta), plus one criterion this
+    split item adds itself — calling the projector twice at two different
+    post-arrival timestamps returns a bit-identical pinned point, the
+    determinism guarantee the "no replay" property actually rests on at the
+    pure-function level.
+  - **`M1-16`** (M) — the actual screen: full-bleed `FlightMap` + title +
+    `FlightCard` + a bird marker positioned by `M1-15`'s projector, driven
+    by `flightStateAt(plan, serverNow())` on a frame loop for the marker and
+    `M1-04`'s existing 1 Hz tick for the card text. Carries the "arrived, no
+    replay" criterion in its screen-level form — not just that the pure
+    function returns the right point (that is `M1-15`'s job), but that
+    mounting the screen after `arrivesAtMs` shows the marker at rest on the
+    very first frame, with no entry animation from elsewhere on the route —
+    plus the reduced-motion criterion (marker throttles to 1 Hz rather than
+    a frame loop when the OS setting is on).
+  - **`M1-17`** (S) — pinch/pan gesture wiring on `FlightMap`'s viewport,
+    clamped so the visible span never drops below 25 km. Carries the
+    original item's remaining criterion. Its own "Do" line steers toward
+    React Native's built-in touch-responder APIs over a new gesture-handling
+    dependency, since a new runtime dependency needs an ADR in the same
+    commit per `CLAUDE.md` and none looked obviously necessary from reading
+    the acceptance criterion alone — left as the implementer's own call to
+    make once the gesture code is actually being written, not decided here.
+  - `M1-06`'s heading kept (never delete a `done`-adjacent item — and this
+    one's history, including the hardening-pass Note that motivated `M1-15`,
+    is worth keeping), checkbox left unticked, status set to `split` — the
+    same non-enum status iteration 19 introduced for `M1-05`, since
+    `gate:roadmap` would otherwise demand a `[M1-06]`-tagged test that can
+    never exist once no code ever lands under that retired ID.
+  - `M1-08`'s `Depends on` line updated from `M1-06` to `M1-16` — the last
+    of the three, the point at which the flight screen is actually
+    feature-complete for `M1-08` (arrival/death) to build on. `M1-11`'s
+    prose reference to "`M1-06` onward" left alone: it is a loose reference
+    to the whole flight-screen milestone group, not a structural dependency
+    a script parses, and `M1-06` remains in the document (as `split`) for
+    that reference to still resolve against.
+  - Every new heading checked against `check-roadmap-tests.mjs`'s own
+    `itemRe` (`^### \[([ x])\]\s+([A-Z]\d+-\d+)\s+—\s+(.+)$`) before writing
+    it down — plain `M1-15`/`M1-16`/`M1-17`, no letter suffix, matching the
+    exact shape iteration 19's journal warned a lettered scheme
+    (`M1-05a`/`b`/`c`) would silently fail. `gate:roadmap`'s pending count
+    moving 6→9 (not the split's own net of the parent leaving pending and
+    three new pending items arriving, +2) confirmed all three new headings
+    were actually parsed, not just written.
+  - No self-review (`/code-review --effort high`) run: this iteration
+    touched no code, only `ROADMAP.md`, `.loop/state.json` and this journal
+    — matching iteration 19's own split, which likewise recorded no
+    self-review step. No `supabase/`, auth, or RLS touched either.
+- **Surprises for the next agent:**
+  - **A hardening pass's own deferred finding can be exactly what motivates
+    how a later item's split is drawn**, not just a footnote it carries
+    forward. Iteration 25 left the progress-semantics gap as a `Note` on
+    `M1-06` because there was nothing yet to check it against; once `M1-06`
+    needed splitting anyway, that gap became the natural seam between "the
+    bird's true position" (`M1-15`) and "the screen that displays it"
+    (`M1-16`) — the finding didn't just get carried forward, it shaped the
+    split itself.
+  - **`M1-06`'s original five acceptance criteria did not split evenly by
+    count** (three went to `M1-15`, two to `M1-16`, one to `M1-17`) **and
+    that unevenness is fine** — the iteration 19 precedent this pass leaned
+    on partitions by "what's independently testable," not by keeping bullet
+    counts balanced. Worth resisting the pull to force an even 2/2/1 or
+    similar split when the actual seams in the work don't fall that way.
+  - **`get_job_logs` on a never-scheduled job now returns a bare `HTTP 404`
+    error from the tool call itself**, rather than the `runner_id: 0`/empty
+    `runner_name` fields earlier iterations read off `list_workflow_jobs`
+    directly. Both are the same underlying signal (no runner assigned, no
+    step ever ran) — worth checking `list_workflow_jobs`'s own fields first
+    (no `runner_id`/`runner_name` at all in this run's job object) rather
+    than only trusting a `get_job_logs` 404 in isolation, since a 404 alone
+    is also what a genuinely deleted or expired log would produce.
+- **Follow-ups filed:** none as new `ROADMAP.md` items beyond `M1-15`,
+  `M1-16` and `M1-17` themselves — they are the follow-ups.

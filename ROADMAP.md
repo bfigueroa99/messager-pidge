@@ -879,50 +879,146 @@ the solid/dashed split instead of the all-solid route `M1-13` drew).
 
 ### [ ] M1-06 — The flight screen
 
-**Status:** in-progress · **Size:** L (**split this before starting**)
+**Status:** split · **Size:** L
 **Depends on:** M1-04, M1-14
-**Read first:** `packages/flight-sim/src/project.ts` (`splitAtProgress`) — see
-the note below before wiring up the bird marker.
 
 **Why:** This is the screenshot people send their friends. It is the entire
 marketing budget.
 
-**Note (found by the iteration 25 hardening pass's altitude review, not yet
-fixed):** `splitAtProgress` currently splits the drawn route at `progress`
-fraction of the *projected screen-space polyline length*, per `M1-14`'s own
-acceptance criteria. But `flightStateAt`'s `progress` is an elapsed-*time*
-fraction, and the bird's actual position (via `geo.ts`'s `interpolate`,
-angular slerp) is a fraction of great-circle *angle*, sampled unevenly by
-`arcSegments`/`densify` and then non-uniformly warped by `projectSegments`'
-affine screen projection. On a route with any curvature or an
-antimeridian split, "40% of pixel length" and "where `interpolate` actually
-puts the bird at 40% elapsed" are two different points on the line — a gap
-invisible today only because `M1-14` never draws a bird marker to compare
-against. When this item adds the marker, check whether the solid/dashed
-split point visibly disagrees with the marker's position; if so, either
-derive the split point from the same geo-space `interpolate` call the
-marker itself uses (project that one point, rather than re-deriving a
-screen-space length fraction), or file a follow-up rather than let the two
-silently drift apart — INV-6 (`docs/PRODUCT.md` §3) is about exactly this
-kind of decoupling.
+**Resolution note:** too large to start as one item, per `docs/LOOP.md` §2's
+override table. Split (iteration 26) into `M1-15`, `M1-16` and `M1-17` below —
+the bird's true screen position (pure engine math, and the item that resolves
+the iteration 25 hardening pass's progress-semantics note), the screen itself
+(chart + card + live marker), and the pinch/zoom constraint, in that order.
+Each carries its own share of the five acceptance criteria originally listed
+here, plus one supporting criterion `M1-15` adds for its own determinism
+guarantee.
 
-**Do:** full-bleed chart, the title, the flight card, the bird driven by
-`flightStateAt(plan, serverNow())` — a frame loop for the marker, 1 Hz for the
-text. Correct on cold start and after backgrounding: recompute from the plan,
-never from stored progress. Constrained gestures with max zoom clamped so no
-street-level detail is ever reachable.
+---
+
+### [ ] M1-15 — The bird's true screen position
+
+**Status:** todo · **Size:** S · **Depends on:** M1-12
+**Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`),
+`packages/flight-sim/src/geo.ts` (`interpolate`)
+
+**Why:** Split from `M1-06` (see its resolution note). This is also where the
+iteration 25 hardening pass's unfixed finding gets resolved: `splitAtProgress`
+(`M1-14`) splits the drawn route at a fraction of *projected screen-space
+polyline length*, but `flightStateAt`'s `position` is a real geo-space point
+(`interpolate`'s angular slerp between origin and destination). On a route
+with curvature or an antimeridian split, "40% of pixel length" and "where the
+bird actually is at 40% elapsed" are two different points — invisible until
+now only because nothing has drawn a marker to compare against.
+`docs/PRODUCT.md`'s INV-6 ("the map shows the bird's true position") is about
+exactly this kind of decoupling, so the marker must be projected from
+`flightStateAt`'s own `position`, never re-derived from a screen-space length
+fraction the way `splitAtProgress` is.
+
+**Do:**
+- A pure function in `packages/flight-sim/src/project.ts` (e.g.
+  `projectPoint`) that takes a single `LatLng` (`flightStateAt(plan,
+  now).position`) plus the same segments/viewport/`paddingRatio` that
+  `projectSegments` fits the drawn route to, and returns the point's
+  `ProjectedPoint` in that identical fit — reusing the same scale/origin
+  derivation `projectSegments` already computes, not a second one that could
+  drift from it.
 
 **Do NOT:**
-- Do not implement sending, arrival, or death here.
-- Do not call `Date.now()` — use the server-corrected clock.
-- Do not animate a bird that has already landed.
+- Do not touch `FlightMap.tsx`, gestures, or any React/React Native code —
+  this is pure math, testable with plain Jest.
+- Do not change `splitAtProgress`'s own behaviour or tests — `M1-14`'s
+  flown/dashed split stays exactly as shipped; only the marker's own position
+  uses this new function.
 
 **Acceptance criteria:**
-- [ ] the bird sits within 1% of the 40% point at 40% of elapsed time
-- [ ] advancing the frozen clock one hour moves it ~4.5% further
-- [ ] a flight whose arrival has passed renders as arrived with no replay
-- [ ] at maximum pinch the visible span is never under 25 km
+- [ ] a bird at 40% of elapsed time on a LA→NYC flight projects within 1% of
+  viewport size of `interpolate(origin, destination, 0.4)`'s own point,
+  projected through the same fit
+- [ ] advancing a frozen clock by one hour on a 22-hour flight moves the
+  projected point roughly 4.5% of the route's total screen-space length
+  further along it
+- [ ] calling the projector at two different timestamps that are both at or
+  after `arrivesAtMs` returns the identical pinned destination point (arrived,
+  no replay, no drift between calls)
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts`
+
+---
+
+### [ ] M1-16 — The flight screen: chart, card and the live marker
+
+**Status:** todo · **Size:** M · **Depends on:** M1-04, M1-14, M1-15
+**Read first:** `apps/mobile/src/ui/screens/FlightCard.tsx` (the required
+`now: () => number` prop and the ref-based 1 Hz interval that survives a
+fresh inline closure every render — the marker's own frame loop needs the
+same care).
+
+**Why:** Split from `M1-06` (see its resolution note). This is the actual
+screen: the chart and the card already exist as components, but nothing yet
+assembles them with a live bird on top.
+
+**Do:** one screen — full-bleed `FlightMap`, the title, `FlightCard`, and a
+bird marker positioned by `M1-15`'s projector — driven by `flightStateAt(plan,
+serverNow())`. The marker updates on a frame loop; the card's text keeps
+`M1-04`'s existing 1 Hz tick. Correct on cold start and after backgrounding:
+every tick recomputes `flightStateAt` from the plan and `serverNow()`, never
+reads a stored or cached progress value. When the OS reduced-motion setting
+is on, throttle the marker's own update loop to 1 Hz instead of a frame loop
+— do not hide the marker, just slow its refresh.
+
+**Do NOT:**
+- Do not implement sending, arrival reveal, or death here — those are `M1-07`
+  and `M1-08`.
+- Do not call `Date.now()` — use the server-corrected clock, matching
+  `FlightCard`'s own required `now` prop.
+- Do not animate a bird that has already landed — an already-arrived flight
+  mounts straight into its resting position at the destination, with no
+  entry animation or easing from elsewhere on the route.
+- Do not implement pinch-to-zoom or a pan/zoom constraint here — that is
+  `M1-17`.
+
+**Acceptance criteria:**
+- [ ] a flight whose arrival has passed renders as arrived with no replay —
+  mounting the screen after `arrivesAtMs` shows the marker at rest at the
+  destination on the very first frame, never animating in from the origin
 - [ ] with reduced motion on, the bird still updates at 1 Hz
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx` (a marker overlay),
+a new `apps/mobile/src/ui/screens/FlightScreen.tsx` and
+`FlightScreen.test.tsx`, a new route under `apps/mobile/app/`,
+`apps/mobile/app/_dev/[story].tsx` (a new story), `tests/shot.test.ts`
+
+---
+
+### [ ] M1-17 — Constrain the chart's pinch-to-zoom
+
+**Status:** todo · **Size:** S · **Depends on:** M1-16
+
+**Why:** Split from `M1-06` (see its resolution note).
+`docs/PRODUCT.md` §9 is explicit that this app never holds a precise
+location; letting a user pinch the chart down to street-level detail would
+make the loft's snapped-to-a-city-centroid privacy promise feel broken even
+though the coordinate itself is still coarse.
+
+**Do:** wire pinch (and pan) gestures onto `FlightMap`'s viewport, clamping
+the maximum zoom so the visible span never drops below 25 km regardless of
+device or route length. Prefer React Native's built-in touch-responder
+APIs over adding a gesture-handling dependency — a new runtime dependency
+here needs an ADR in `docs/DECISIONS.md` in the same commit, per
+`CLAUDE.md`.
+
+**Do NOT:**
+- Do not add any minimum zoom-out constraint beyond what `M1-12`'s existing
+  fit-to-bounds padding already gives — this item only bounds zooming in.
+- Do not let a zoom/pan gesture change what `flightStateAt` reports; the
+  marker's position is unaffected by the viewport the user is looking through.
+
+**Acceptance criteria:**
+- [ ] at maximum pinch the visible span is never under 25 km
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`,
+`FlightMap.test.tsx`
 
 ---
 
@@ -952,7 +1048,7 @@ pre-release confirmation stating the due time and that it cannot be recalled; a
 ### [ ] M1-08 — Arrival, and the death that nobody sees
 
 **Status:** todo · **Size:** L (**split this before starting**)
-**Depends on:** M1-06, M1-07 · **Blocked by:** Q-002 for the Realtime half
+**Depends on:** M1-16, M1-07 · **Blocked by:** Q-002 for the Realtime half
 
 **Why:** The arrival is the payoff for 22 hours of waiting. If it is late,
 silent, or ordinary, the product fails.
