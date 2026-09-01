@@ -879,7 +879,7 @@ the solid/dashed split instead of the all-solid route `M1-13` drew).
 
 ### [ ] M1-06 — The flight screen
 
-**Status:** todo · **Size:** L (**split this before starting**)
+**Status:** in-progress · **Size:** L (**split this before starting**)
 **Depends on:** M1-04, M1-14
 **Read first:** `packages/flight-sim/src/project.ts` (`splitAtProgress`) — see
 the note below before wiring up the bird marker.
