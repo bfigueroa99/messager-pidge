@@ -1,10 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 import type { ComponentType } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { arcSegments, projectSegments, type Viewport } from '@pidge/flight-sim';
+import { arcSegments, projectSegments, type PublicFlight, type Viewport } from '@pidge/flight-sim';
 
 import { APP_NAME } from '../../src/config/app-name';
 import { FlightMap } from '../../src/ui/screens/FlightMap';
+import { FlightScreen } from '../../src/ui/screens/FlightScreen';
 
 /**
  * Renders one component in isolation with fixed props, for `scripts/shot.mjs`
@@ -52,9 +53,50 @@ function FlightMapStory() {
   );
 }
 
+const NYC = { lat: 40.7128, lon: -74.006 };
+const FLIGHT_SCREEN_VIEWPORT: Viewport = { width: 393, height: 700 };
+const FLIGHT_SCREEN_DURATION_MS = 79_380_000;
+// scripts/shot.mjs's own DEFAULT_FROZEN_AT_MS — duplicated rather than
+// imported, since that script is Node CLI tooling, not part of the app.
+const FLIGHT_SCREEN_DEFAULT_NOW_MS = 1_700_000_000_000;
+
+// Chosen so the default frozen clock (no `?t=` override) lands 40% of the
+// way through the flight, the same demonstrative point FlightCard's own
+// fixture uses, rather than at the very moment of departure a bare
+// `arcSegments`-shaped demo flight would otherwise show.
+const FLIGHT_SCREEN_DEPARTS_AT_MS =
+  FLIGHT_SCREEN_DEFAULT_NOW_MS - Math.round(FLIGHT_SCREEN_DURATION_MS * 0.4);
+
+const FLIGHT_SCREEN_DEMO_FLIGHT: PublicFlight = {
+  origin: LAX,
+  destination: NYC,
+  departsAtMs: FLIGHT_SCREEN_DEPARTS_AT_MS,
+  arrivesAtMs: FLIGHT_SCREEN_DEPARTS_AT_MS + FLIGHT_SCREEN_DURATION_MS,
+  distanceKm: 3936,
+  initialBearingDeg: 66,
+  effectiveSpeedKmh: 178.3,
+  simVersion: 1,
+};
+
+function FlightScreenStory({ frozenAtMs }: StoryProps) {
+  const nowMs = frozenAtMs ?? FLIGHT_SCREEN_DEFAULT_NOW_MS;
+  return (
+    <View style={styles.screen} testID="ready">
+      <FlightScreen
+        flight={FLIGHT_SCREEN_DEMO_FLIGHT}
+        originName="Los Angeles"
+        destinationName="New York"
+        viewport={FLIGHT_SCREEN_VIEWPORT}
+        now={() => nowMs}
+      />
+    </View>
+  );
+}
+
 const STORIES: Record<string, ComponentType<StoryProps>> = {
   index: IndexStory,
   'flight-map': FlightMapStory,
+  'flight-screen': FlightScreenStory,
 };
 
 export default function Story() {

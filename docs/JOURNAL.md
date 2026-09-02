@@ -2767,3 +2767,141 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. `M1-16` (depends on `M1-04`, `M1-14`, `M1-15` —
   all now `done`) is next in dependency order and is exactly where this
   function gets its first real caller.
+
+---
+
+## Iteration 28 — 2026-09-02 — M1-16
+
+- **Outcome:** done
+- **CI:** the tip's own two most recent runs (`9f9eb69`, both `pull_request`
+  and `push` triggers) completed in ~3-4 seconds via `list_workflow_jobs`
+  (job `100077962366`: `created_at`/`completed_at` 00:26:31→00:26:34 UTC) with
+  no `runner_id`/`runner_name` field on the job object at all — the same
+  never-scheduled shape `Q-003` documents, iteration 27's third presentation
+  of it. Not this iteration's item.
+- **Selection:** `iteration(28) - last_hardening_iteration(25) = 3 < 5`;
+  `iteration(28) - last_audit_iteration(21) = 7 < 10`. Neither override
+  fired. Topmost `todo` item with satisfied dependencies: `M1-16` (`M1-04`,
+  `M1-14`, `M1-15` all `done`). Size `M`, no split needed.
+- **Verify:** typecheck ok · lint ok · 193 tests ok (floor raised 187 → 193,
+  +6: five new `FlightScreen.test.tsx` tests plus one new `tests/shot.test.ts`
+  byte-identical-screenshot-pair test) · flight-sim coverage unchanged
+  (98.99%/90.47% aggregate, both above the 90%/85% gate — this item touched
+  no `packages/flight-sim` source, only consumed its existing exports) ·
+  `gate:roadmap` ok (25 done, 7 pending) · `gate:tests` ok (floor raised to
+  193)
+- **What landed:** `FlightScreen.tsx` — the screen `M1-16`'s own "Why" line
+  called the actual screenshot people send their friends: full-bleed
+  `FlightMap`, a title, `FlightCard`, and a live bird marker positioned by
+  `M1-15`'s `projectPoint`, all driven by `flightStateAt(flight, now())`.
+  - `FlightMap.tsx` gained one new optional prop, `markerPoint`, rendered as
+    an SVG `<Circle>` layered over the existing polylines — the marker's
+    *position* is computed entirely outside this component (`FlightScreen`
+    calls `flightStateAt`/`arcSegments`/`projectSegments`/`projectPoint`);
+    `FlightMap` only draws the point it is handed, matching the "takes
+    points and a number and draws them" contract its own docstring already
+    claimed for the route.
+  - The marker updates on a `requestAnimationFrame` loop by default —
+    the first use of `requestAnimationFrame` anywhere in this codebase —
+    throttled instead to `FlightCard`'s own 1 Hz `setInterval` tick when the
+    `reducedMotion` prop is true, per the item's own "Do" line. Both paths
+    share one `tick()` closure that reads `now()` through a ref (the same
+    care `FlightCard`'s own interval already takes, called out explicitly in
+    this item's "Read first" note) and reports whether the flight has now
+    arrived.
+  - The initial `nowMs` is lazily computed from `now()` at mount
+    (`useState(() => now())`), so a flight mounted after `arrivesAtMs`
+    already renders at rest at the destination on the very first render —
+    there is no separate "arrived" branch and nothing to suppress, because
+    every render (the first included) recomputes `flightStateAt` fresh
+    rather than animating from a stored or default position. This is the
+    item's first acceptance criterion, satisfied structurally rather than
+    by a special case.
+  - Self-review (`/code-review --effort high`) found two real issues beyond
+    the two criteria `M1-16` itself listed:
+    1. `arcSegments`/`projectSegments` were being recalled from scratch on
+       every single animation frame, even though a mounted flight's route
+       geometry never changes — only the marker's own position does. Fixed
+       with `useMemo`, keyed on the origin/destination's own lat/lon fields
+       and the viewport's width/height (primitives, not object identity, so
+       a caller passing a fresh viewport object every render — plausible
+       with `useWindowDimensions()` — doesn't defeat the memoization).
+    2. Neither the frame loop nor the reduced-motion interval ever stopped
+       rescheduling once a flight had arrived — `flightStateAt` pins the
+       bird at the destination forever once `nowMs >= arrivesAtMs`, so every
+       tick after that point burns CPU/battery recomputing a value that can
+       never change again, indefinitely, for the life of the mounted
+       screen. Fixed by having the shared `tick()` helper return whether
+       arrival has been reached, and clearing the interval /
+       not-rescheduling the frame when it has. Regression-tested by
+       asserting the live fake-timer count drops by exactly one (this
+       screen's own interval) once `now()` crosses `arrivesAtMs`, while
+       `FlightCard`'s own independent 1 Hz interval — unaffected by this
+       item, ticks forever by its own `M1-04` design — stays running.
+    3. (Maintainability, not correctness) the test file had hand-copied
+       `FlightScreen`'s internal `PADDING_RATIO` as its own literal, risking
+       silent drift if the screen's margin ever changed. Fixed by exporting
+       the constant from `FlightScreen.tsx` and importing it in the test
+       instead of duplicating it.
+  - No real navigation into this screen exists yet — `M1-07` (compose and
+    release) and `M1-08` (arrival/death) are both still `todo`, and no
+    server-time-sync mechanism (a `serverNow()`-shaped function) has been
+    built anywhere in the app, only referenced in `ROADMAP.md`'s own prose.
+    The new real route, `apps/mobile/app/flight-demo.tsx`, is therefore an
+    honest, explicitly-named demo rather than a route that pretends to be
+    the real send/receive flow: a fixed LA→NYC flight anchored 40% through
+    its journey relative to `Date.now()` at the moment the route mounts,
+    the same honest-placeholder precedent `M1-03`'s `loft-picker.tsx`
+    already set for a screen with no real backend to wire to yet. Calling
+    `Date.now()` inside this route file is that route's own concrete choice
+    as `FlightScreen`'s caller, not a violation of the component's own
+    "never call `Date.now()` internally" rule — the same division of
+    responsibility `FlightCard`'s existing `now` prop already established.
+  - A new `flight-screen` dev story (`apps/mobile/app/_dev/[story].tsx`)
+    renders the same demo flight with a query-param-frozen clock (falling
+    back to `scripts/shot.mjs`'s own default frozen instant when `?t=` is
+    omitted), anchored so the *default* frozen time lands 40% through the
+    flight — the same demonstrative point `FlightCard`'s own test fixture
+    uses — rather than at the moment of departure. `tests/shot.test.ts`
+    extended with this story's own byte-identical-screenshot-pair test,
+    the same pattern `M1-13` established for `flight-map`; confirmed the
+    ongoing `requestAnimationFrame` loop does not break this guarantee —
+    React bails out of a state update when the new value strictly equals
+    the old one, so a frozen `now()` never actually triggers a re-render
+    after the first tick, and two runs still produce byte-identical PNGs.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **A `useEffect`-driven animation loop that recomputes a pure function on
+    every tick can silently reintroduce the exact per-frame recomputation
+    cost a hardening pass would flag if it were sitting in a component
+    render path instead** — `arcSegments`/`projectSegments` had already been
+    proven cheap enough to call on every *render* by earlier items, but
+    "every render" and "every render, 60 times a second, forever, including
+    after the value being displayed can no longer change" are different
+    cost profiles. Worth checking not just whether a pure function call is
+    correct inside a new frame-loop-driven component, but whether it is
+    being asked to run far more often than its result can possibly change.
+  - **A `requestAnimationFrame` loop (or a `setInterval` one) that never
+    checks whether it still needs to run is a real, easy-to-miss resource
+    leak, not just an efficiency nitpick** — nothing here would have caught
+    it functionally (the marker's position is still correct at every tick;
+    it just never needed most of those ticks), which is exactly why it
+    survived past a first implementation pass and needed a dedicated
+    self-review finding rather than a failing test to surface it. Worth
+    asking "does this loop know when to stop?" as its own explicit question
+    whenever a component starts its own frame or interval loop, not folding
+    it into a general correctness check.
+  - **`jest.getTimerCount()` is a clean way to assert a loop actually
+    stopped, but only once you account for every timer live in the tree, not
+    just the one under test** — the first version of the "stops after
+    arrival" regression test asserted the count reached exactly `0` and
+    failed, because `FlightCard`'s own independent 1 Hz interval (mounted as
+    a sibling inside the same screen) is still live and, by its own `M1-04`
+    design, never stops. Asserting a *relative* drop (`timersBeforeArrival
+    - 1`) rather than an absolute `0` is the version that actually tests
+    the thing this item changed, without accidentally depending on a
+    different component's own unrelated lifecycle.
+- **Follow-ups filed:** none as new `ROADMAP.md` items. `M1-17` (pinch/pan
+  gesture wiring, depends on `M1-16` — now `done`) is next in dependency
+  order.

@@ -962,9 +962,9 @@ coordinate), with a regression test.
 
 ---
 
-### [ ] M1-16 — The flight screen: chart, card and the live marker
+### [x] M1-16 — The flight screen: chart, card and the live marker
 
-**Status:** in-progress · **Size:** M · **Depends on:** M1-04, M1-14, M1-15
+**Status:** done · **Size:** M · **Depends on:** M1-04, M1-14, M1-15
 **Read first:** `apps/mobile/src/ui/screens/FlightCard.tsx` (the required
 `now: () => number` prop and the ref-based 1 Hz interval that survives a
 fresh inline closure every render — the marker's own frame loop needs the
@@ -995,15 +995,45 @@ is on, throttle the marker's own update loop to 1 Hz instead of a frame loop
   `M1-17`.
 
 **Acceptance criteria:**
-- [ ] a flight whose arrival has passed renders as arrived with no replay —
+- [x] a flight whose arrival has passed renders as arrived with no replay —
   mounting the screen after `arrivesAtMs` shows the marker at rest at the
   destination on the very first frame, never animating in from the origin
-- [ ] with reduced motion on, the bird still updates at 1 Hz
+- [x] with reduced motion on, the bird still updates at 1 Hz
+
+**Resolution note:** the marker overlay (`FlightMap`'s new optional
+`markerPoint` prop, rendered as an SVG `<Circle>`) computes nothing itself —
+`FlightScreen.tsx` is the one place that calls `flightStateAt`, `arcSegments`,
+`projectSegments` and `M1-15`'s `projectPoint`, per `CLAUDE.md`'s layering
+rule. Self-review (`/code-review --effort high`) found two real issues beyond
+the two listed criteria: the route's geometry (`arcSegments`/`projectSegments`)
+was being recomputed from scratch on every animation frame even though it
+never changes for the life of a mounted flight — fixed with `useMemo` keyed
+on the origin/destination/viewport, and the frame loop (and the
+reduced-motion interval) never stopped rescheduling once a flight had
+arrived, burning CPU/battery forever on a position that can no longer
+change — fixed by having the shared `tick()` helper report arrival and
+clear/stop itself, with a regression test proving the interval count drops
+by exactly one once `now()` crosses `arrivesAtMs`. Also caught and fixed: the
+test file's own `PADDING_RATIO` was hand-copied rather than imported from
+`FlightScreen.tsx`, a drift risk fixed by exporting the screen's own constant
+for the test to import instead.
+No real navigation into this screen exists yet (`M1-07` compose/release and
+`M1-08` arrival are still `todo`, and there is no server-time-sync mechanism
+built anywhere in the app), so the new real route
+(`apps/mobile/app/flight-demo.tsx`) is an honest, explicitly-named demo —
+a fixed LA→NYC flight anchored 40% through its journey relative to
+`Date.now()` at mount, the same honest-placeholder precedent `M1-03`'s
+`loft-picker.tsx` already set for a screen with no real backend to wire to
+yet. `Date.now()` there is this route's own concrete choice as the caller
+supplying `FlightScreen`'s required `now` prop, not a violation of the
+component's own "never call `Date.now()` internally" rule.
 
 **Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx` (a marker overlay),
 a new `apps/mobile/src/ui/screens/FlightScreen.tsx` and
-`FlightScreen.test.tsx`, a new route under `apps/mobile/app/`,
-`apps/mobile/app/_dev/[story].tsx` (a new story), `tests/shot.test.ts`
+`FlightScreen.test.tsx`, a new route `apps/mobile/app/flight-demo.tsx`,
+`apps/mobile/app/_dev/[story].tsx` (a new `flight-screen` story),
+`tests/shot.test.ts` (extended with the new story's byte-identical
+screenshot pair)
 
 ---
 

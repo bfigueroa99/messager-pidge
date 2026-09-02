@@ -1,10 +1,11 @@
 import { StyleSheet, View } from 'react-native';
-import Svg, { Polyline, Rect } from 'react-native-svg';
+import Svg, { Circle, Polyline, Rect } from 'react-native-svg';
 import { splitAtProgress, type ProjectedPoint, type Viewport } from '@pidge/flight-sim';
 
 import { COLORS } from '../theme/tokens';
 
 const REMAINING_DASH_PATTERN = '6,6';
+const MARKER_RADIUS = 5;
 
 export interface FlightMapProps {
   /** `projectSegments()`'s own output — never merged, so an antimeridian
@@ -18,6 +19,11 @@ export interface FlightMapProps {
    * route already flown. A prop, never read from the ambient clock inside
    * this component, matching `M1-04`'s `FlightCard` pattern. */
   readonly progress: number;
+  /** `M1-15`'s `projectPoint(flightStateAt(plan, serverNow()).position, ...)`
+   * — the bird's real geo-space position, projected through the identical
+   * fit `segments` was. Omitted renders no marker; this component does not
+   * compute or default a position itself. */
+  readonly markerPoint?: ProjectedPoint;
 }
 
 function toPointsAttr(points: readonly ProjectedPoint[]): string {
@@ -59,7 +65,7 @@ function renderPolylines(
  * web is the only render path this container can screenshot or test
  * (`M0-08`/ADR-008).
  */
-export function FlightMap({ segments, viewport, progress }: FlightMapProps) {
+export function FlightMap({ segments, viewport, progress, markerPoint }: FlightMapProps) {
   const { flown, remaining } = splitAtProgress(segments, progress);
 
   return (
@@ -68,6 +74,15 @@ export function FlightMap({ segments, viewport, progress }: FlightMapProps) {
         <Rect x={0} y={0} width={viewport.width} height={viewport.height} fill={COLORS.chartWater} />
         {renderPolylines(flown, 'flown')}
         {renderPolylines(remaining, 'remaining', REMAINING_DASH_PATTERN)}
+        {markerPoint && (
+          <Circle
+            testID="bird-marker"
+            cx={markerPoint.x}
+            cy={markerPoint.y}
+            r={MARKER_RADIUS}
+            fill={COLORS.bird}
+          />
+        )}
       </Svg>
     </View>
   );

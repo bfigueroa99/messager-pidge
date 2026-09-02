@@ -5,6 +5,7 @@ import { join } from 'node:path';
 const ROOT = join(__dirname, '..');
 const SHOT_PNG = join(ROOT, 'artifacts', 'shots', 'index.png');
 const FLIGHT_MAP_SHOT_PNG = join(ROOT, 'artifacts', 'shots', 'flight-map.png');
+const FLIGHT_SCREEN_SHOT_PNG = join(ROOT, 'artifacts', 'shots', 'flight-screen.png');
 
 function runShot(story: string, pngPath: string): Buffer {
   execFileSync('pnpm', ['run', 'shot', '--', story], {
@@ -106,6 +107,33 @@ describe('the chart can be seen headlessly', () => {
 
       const second = runShot('flight-map', FLIGHT_MAP_SHOT_PNG);
       expect(Buffer.compare(firstFlightMapPng, second)).toBe(0);
+    },
+    // Two full pipeline runs back to back — same per-run ceiling as the
+    // `index` story's own test above, doubled.
+    960_000,
+  );
+});
+
+/**
+ * `[M1-16]` The flight screen is the first `_dev` story assembling
+ * `FlightMap`, `FlightCard` and the live marker together. Same
+ * byte-identical-under-a-frozen-clock guarantee as `M0-08`/`M1-13`, applied
+ * to a third story rather than trusted to generalize untested.
+ */
+describe('the flight screen can be seen headlessly', () => {
+  let firstFlightScreenPng: Buffer | undefined;
+
+  it(
+    '[M1-16] two consecutive frozen-clock screenshots of the flight screen are byte-identical',
+    () => {
+      rmSync(FLIGHT_SCREEN_SHOT_PNG, { force: true });
+
+      firstFlightScreenPng = runShot('flight-screen', FLIGHT_SCREEN_SHOT_PNG);
+      expect(existsSync(FLIGHT_SCREEN_SHOT_PNG)).toBe(true);
+      expect(statSync(FLIGHT_SCREEN_SHOT_PNG).size).toBeGreaterThan(0);
+
+      const second = runShot('flight-screen', FLIGHT_SCREEN_SHOT_PNG);
+      expect(Buffer.compare(firstFlightScreenPng, second)).toBe(0);
     },
     // Two full pipeline runs back to back — same per-run ceiling as the
     // `index` story's own test above, doubled.
