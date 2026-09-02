@@ -898,7 +898,7 @@ guarantee.
 
 ### [ ] M1-15 — The bird's true screen position
 
-**Status:** todo · **Size:** S · **Depends on:** M1-12
+**Status:** in-progress · **Size:** S · **Depends on:** M1-12
 **Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`),
 `packages/flight-sim/src/geo.ts` (`interpolate`)
 
