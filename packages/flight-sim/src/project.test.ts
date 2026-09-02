@@ -1,6 +1,8 @@
 import { arcSegments, interpolate } from './geo';
 import { LAX, LONDON, NYC, SYDNEY, TOKYO } from './__fixtures__/cities';
-import { projectSegments, splitAtProgress } from './project';
+import { planFlight } from './plan';
+import { flightStateAt } from './state';
+import { projectPoint, projectSegments, splitAtProgress } from './project';
 
 const VIEWPORT = { width: 400, height: 800 };
 const PADDING_RATIO = 0.1;
@@ -154,5 +156,60 @@ describe('splitAtProgress', () => {
 
     flown.forEach((segment) => expect(segment.length).toBe(0));
     expect(remaining).toEqual(projected);
+  });
+});
+
+describe('projectPoint', () => {
+  const T0 = 1_770_000_000_000;
+  const plan = planFlight({ origin: LAX, destination: NYC, departsAtMs: T0, seed: 7 });
+  const f = plan.pub;
+  const totalMs = f.arrivesAtMs - f.departsAtMs;
+  const segments = arcSegments(LAX, NYC);
+
+  it("[M1-15] a bird at 40% of elapsed time on a LA to NYC flight projects within 1% of viewport size of interpolate(origin, destination, 0.4)'s own point, projected through the same fit", () => {
+    const state = flightStateAt(f, T0 + totalMs * 0.4);
+    const expected = projectPoint(interpolate(LAX, NYC, 0.4), segments, VIEWPORT, PADDING_RATIO);
+    const actual = projectPoint(state.position, segments, VIEWPORT, PADDING_RATIO);
+
+    const viewportSize = Math.max(VIEWPORT.width, VIEWPORT.height);
+    expect(Math.hypot(actual.x - expected.x, actual.y - expected.y)).toBeLessThan(viewportSize * 0.01);
+  });
+
+  it("[M1-15] advancing a frozen clock by one hour on a 22-hour flight moves the projected point roughly 4.5% of the route's total screen-space length further along it", () => {
+    const projected = projectSegments(segments, VIEWPORT, PADDING_RATIO);
+    const total = totalLength(projected);
+    const hourMs = 3_600_000;
+    const t = T0 + totalMs * 0.3;
+
+    const before = projectPoint(flightStateAt(f, t).position, segments, VIEWPORT, PADDING_RATIO);
+    const after = projectPoint(flightStateAt(f, t + hourMs).position, segments, VIEWPORT, PADDING_RATIO);
+    const delta = Math.hypot(after.x - before.x, after.y - before.y);
+
+    expect(delta / total).toBeGreaterThan(0.03);
+    expect(delta / total).toBeLessThan(0.06);
+  });
+
+  it('[M1-15] calling the projector at two different timestamps that are both at or after arrivesAtMs returns the identical pinned destination point (arrived, no replay, no drift between calls)', () => {
+    const first = projectPoint(flightStateAt(f, f.arrivesAtMs).position, segments, VIEWPORT, PADDING_RATIO);
+    const second = projectPoint(flightStateAt(f, f.arrivesAtMs + 86_400_000).position, segments, VIEWPORT, PADDING_RATIO);
+
+    expect(second).toEqual(first);
+    expect(first).toEqual(projectPoint(NYC, segments, VIEWPORT, PADDING_RATIO));
+  });
+
+  it('[M1-15] throws rather than silently projecting to an infinite point when segments is empty', () => {
+    expect(() => projectPoint(LAX, [], VIEWPORT, PADDING_RATIO)).toThrow();
+  });
+
+  it('[M1-15] projects a point crossing the antimeridian into the same fit as the route without exploding off-screen', () => {
+    const tokyoLaxSegments = arcSegments(TOKYO, LAX);
+    const midpoint = interpolate(TOKYO, LAX, 0.5);
+
+    const projected = projectPoint(midpoint, tokyoLaxSegments, VIEWPORT, PADDING_RATIO);
+
+    expect(Number.isFinite(projected.x)).toBe(true);
+    expect(Number.isFinite(projected.y)).toBe(true);
+    expect(projected.x).toBeGreaterThanOrEqual(0);
+    expect(projected.x).toBeLessThanOrEqual(VIEWPORT.width);
   });
 });

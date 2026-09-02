@@ -896,9 +896,9 @@ guarantee.
 
 ---
 
-### [ ] M1-15 — The bird's true screen position
+### [x] M1-15 — The bird's true screen position
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-12
+**Status:** done · **Size:** S · **Depends on:** M1-12
 **Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`),
 `packages/flight-sim/src/geo.ts` (`interpolate`)
 
@@ -932,15 +932,31 @@ fraction the way `splitAtProgress` is.
   uses this new function.
 
 **Acceptance criteria:**
-- [ ] a bird at 40% of elapsed time on a LA→NYC flight projects within 1% of
+- [x] a bird at 40% of elapsed time on a LA→NYC flight projects within 1% of
   viewport size of `interpolate(origin, destination, 0.4)`'s own point,
   projected through the same fit
-- [ ] advancing a frozen clock by one hour on a 22-hour flight moves the
+- [x] advancing a frozen clock by one hour on a 22-hour flight moves the
   projected point roughly 4.5% of the route's total screen-space length
   further along it
-- [ ] calling the projector at two different timestamps that are both at or
+- [x] calling the projector at two different timestamps that are both at or
   after `arrivesAtMs` returns the identical pinned destination point (arrived,
   no replay, no drift between calls)
+
+**Resolution note:** `projectSegments`' own scale/origin math was extracted
+into an internal `computeFit` helper (behavior-preserving — verified
+byte-identical against every existing `[M1-12]`/`M1-13]`/`[M1-14]` test) so
+`projectPoint` calls the identical derivation rather than a second one.
+Locating a point within that fit's unwrapped-longitude range (needed for a
+point crossing the antimeridian, e.g. a future Tokyo→LA flight) required one
+new helper, `unwrapLonToFit`, not anticipated by the item's own `Do` line —
+it tries the raw longitude and both neighbouring 360° wraps and keeps
+whichever lands closest to the fit's own center. Self-review
+(`/code-review --effort high`) found a real gap: unlike `projectSegments`,
+`projectPoint` had no empty-`segments` guard, so an empty array would
+silently return `{x: -Infinity, y: -Infinity}` instead of failing loudly —
+fixed by throwing, matching this codebase's own precedent
+(`snap_profile_location` raising rather than nulling an unresolvable
+coordinate), with a regression test.
 
 **Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts`
 

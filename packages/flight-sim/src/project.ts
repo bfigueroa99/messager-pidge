@@ -43,20 +43,25 @@ function unwrapLongitudes(segments: readonly (readonly LatLng[])[]): number[][] 
 }
 
 /**
- * Projects `arcSegments()`'s antimeridian-split output into screen space,
- * fit to `viewport` with `paddingRatio` of margin reserved on every side
- * regardless of route length — a 5 mi hop and a 10,000 mi crossing both get
- * the same visual margin. Segments are never merged: each input segment
- * produces its own output array, so a split route never produces a point
- * connecting across the seam.
+ * The scale/origin derivation `projectSegments` fits a route to, shared with
+ * `projectPoint` so a marker's own position can never drift from the route's
+ * fit — the two functions call this once, never re-derive it independently.
  */
-export function projectSegments(
+interface Fit {
+  readonly scale: number;
+  readonly originX: number;
+  readonly originY: number;
+  readonly minLon: number;
+  readonly maxLon: number;
+  readonly maxLat: number;
+  readonly unwrappedLons: readonly (readonly number[])[];
+}
+
+function computeFit(
   segments: readonly (readonly LatLng[])[],
   viewport: Viewport,
   paddingRatio: number,
-): ProjectedPoint[][] {
-  if (segments.length === 0) return [];
-
+): Fit {
   const unwrappedLons = unwrapLongitudes(segments);
   const allLats = segments.flatMap((segment) => segment.map((point) => point.lat));
   const allLons = unwrappedLons.flat();
@@ -83,12 +88,89 @@ export function projectSegments(
   const originX = (viewport.width - spanLon * scale) / 2;
   const originY = (viewport.height - spanLat * scale) / 2;
 
+  return { scale, originX, originY, minLon, maxLon, maxLat, unwrappedLons };
+}
+
+/**
+ * Brings `lon` (a raw geographic longitude in [-180, 180)) into the same
+ * unwrapped coordinate space `computeFit` reconstructed for the route's
+ * segments, so a point that lies on the route can be located inside
+ * `[fit.minLon, fit.maxLon]` even when that range extends past ±180 at an
+ * antimeridian crossing. Tries the raw value and both neighbouring 360°
+ * wraps and keeps whichever lands closest to the fit's own centre — exactly
+ * one candidate can, since the route this point sits on is the same route
+ * that produced the fit.
+ */
+function unwrapLonToFit(lon: number, fit: Pick<Fit, 'minLon' | 'maxLon'>): number {
+  const center = (fit.minLon + fit.maxLon) / 2;
+  let best = lon;
+  let bestDistance = Math.abs(lon - center);
+  for (const candidate of [lon - 360, lon + 360]) {
+    const distance = Math.abs(candidate - center);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+/**
+ * Projects `arcSegments()`'s antimeridian-split output into screen space,
+ * fit to `viewport` with `paddingRatio` of margin reserved on every side
+ * regardless of route length — a 5 mi hop and a 10,000 mi crossing both get
+ * the same visual margin. Segments are never merged: each input segment
+ * produces its own output array, so a split route never produces a point
+ * connecting across the seam.
+ */
+export function projectSegments(
+  segments: readonly (readonly LatLng[])[],
+  viewport: Viewport,
+  paddingRatio: number,
+): ProjectedPoint[][] {
+  if (segments.length === 0) return [];
+
+  const fit = computeFit(segments, viewport, paddingRatio);
+
   return segments.map((segment, segmentIndex) =>
     segment.map((point, pointIndex) => ({
-      x: originX + (unwrappedLons[segmentIndex]![pointIndex]! - minLon) * scale,
-      y: originY + (maxLat - point.lat) * scale,
+      x: fit.originX + (fit.unwrappedLons[segmentIndex]![pointIndex]! - fit.minLon) * fit.scale,
+      y: fit.originY + (fit.maxLat - point.lat) * fit.scale,
     })),
   );
+}
+
+/**
+ * Projects a single point — `flightStateAt`'s own real geo-space `position`,
+ * never a screen-space length fraction — through the identical fit
+ * `projectSegments` computes for `segments`, so the bird's marker and the
+ * drawn route always agree on scale and origin. `segments` must be the same
+ * `arcSegments()` output the route itself is drawn from; passing a different
+ * route's segments would fit the point to the wrong scale.
+ *
+ * Throws on an empty `segments` array rather than silently returning an
+ * infinite point (`Math.min`/`Math.max` over nothing) — a wrong marker
+ * position that fails loudly is safer than one that fails invisibly,
+ * matching this codebase's own precedent (`snap_profile_location` raising
+ * rather than nulling a coordinate it cannot resolve).
+ */
+export function projectPoint(
+  point: LatLng,
+  segments: readonly (readonly LatLng[])[],
+  viewport: Viewport,
+  paddingRatio: number,
+): ProjectedPoint {
+  if (segments.length === 0) {
+    throw new Error('projectPoint: segments must be non-empty — nothing to fit the point against');
+  }
+
+  const fit = computeFit(segments, viewport, paddingRatio);
+  const lon = unwrapLonToFit(point.lon, fit);
+
+  return {
+    x: fit.originX + (lon - fit.minLon) * fit.scale,
+    y: fit.originY + (fit.maxLat - point.lat) * fit.scale,
+  };
 }
 
 /** `projectSegments()`'s output, partitioned at a point along the route. */

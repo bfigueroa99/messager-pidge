@@ -2673,3 +2673,97 @@ knowledge survives a context reset.
     is also what a genuinely deleted or expired log would produce.
 - **Follow-ups filed:** none as new `ROADMAP.md` items beyond `M1-15`,
   `M1-16` and `M1-17` themselves — they are the follow-ups.
+
+---
+
+## Iteration 27 — 2026-09-02 — M1-15
+
+- **Outcome:** done
+- **CI:** the 2 most recent runs on the previous tip (`bbad58e`) both
+  completed in ~3 seconds (job `99860857249`: created/completed
+  12:44:10→12:44:13 UTC) via `list_workflow_jobs` — no `runner_id`/
+  `runner_name` field on the job object at all, the same never-scheduled
+  shape `Q-003` documents. Not this iteration's item.
+- **Selection:** `iteration(27) - last_hardening_iteration(25) = 2 < 5`;
+  `iteration(27) - last_audit_iteration(21) = 6 < 10`. Neither override
+  fired. Topmost `todo` item with satisfied dependencies: `M1-15` (`M1-12`
+  done). Size `S`.
+- **Verify:** typecheck ok · lint ok · 187 tests ok (floor raised 182 → 187,
+  +5: four new tests plus the self-review regression test) · flight-sim
+  coverage 98.99%/90.47% aggregate (`project.ts` itself 98.19%/89.28%, both
+  still above the 90%/85% gate) · `gate:roadmap` ok (24 done, 8 pending) ·
+  `gate:tests` ok (floor raised to 187)
+- **What landed:** `projectPoint(point, segments, viewport, paddingRatio)` in
+  `packages/flight-sim/src/project.ts` — the pure function that resolves the
+  iteration 25 hardening pass's deferred finding (also the reason `M1-06`
+  split the way it did at iteration 26): the bird marker's screen position
+  must come from `flightStateAt`'s real geo-space `position`, never from
+  re-deriving a screen-space length fraction the way `splitAtProgress` does
+  for the flown/dashed line split.
+  - `projectSegments`' own scale/origin derivation (min/max lat/lon, span,
+    clamped padding ratio, shared scale, origin) was extracted into an
+    internal `computeFit` helper, called by both `projectSegments` and
+    `projectPoint` — the item's own "Do" line was explicit that this must be
+    *the same* derivation, not a second one that could drift from it.
+    Verified behavior-preserving: every existing `[M1-12]`/`[M1-14]` test
+    (including the byte-identical `M1-13` screenshot pairs, unaffected since
+    they exercise `FlightMap.tsx`/`projectSegments`, not the new function)
+    still passes unchanged.
+  - A new `unwrapLonToFit` helper locates a raw point's longitude inside the
+    fit's unwrapped coordinate range (which can extend past ±180° at an
+    antimeridian crossing) by trying the raw value and both neighbouring
+    360° wraps and keeping whichever lands closest to the fit's own center —
+    exactly one candidate can land there, since the point lies on the same
+    route that produced the fit. Not spelled out in the item's own "Do"
+    line, which only mentioned reusing `projectSegments`' scale/origin; the
+    antimeridian case turned out to need this extra piece to actually work
+    for a future Tokyo→LA-style flight, not just a dead-straight one.
+  - Self-review (`/code-review --effort high`) found one real correctness
+    gap beyond the three listed acceptance criteria: unlike `projectSegments`
+    (which returns `[]` for an empty `segments` array), `projectPoint` had no
+    empty-`segments` guard at all — `Math.min`/`Math.max` over an empty array
+    yield `Infinity`/`-Infinity`, so it would have silently returned
+    `{x: -Infinity, y: -Infinity}` rather than failing loudly. Fixed by
+    throwing on an empty array, matching this codebase's own established
+    precedent (`M0-11`'s `snap_profile_location` raising rather than nulling
+    a coordinate it cannot resolve) rather than inventing a new failure mode.
+    Added a regression test proving the throw. `arcSegments(a, b)` in
+    practice never returns an empty array for two real points (confirmed by
+    reading `densify`/`splitAtAntimeridian`: even a coincident-point route
+    still produces `recommendedSteps`' minimum of 24 sample points as one
+    segment), so this was unreachable through the one real call path today —
+    still worth fixing now, before `M1-16` gives this function a real caller,
+    since a silently-wrong marker position is exactly the class of bug
+    `PRODUCT.md`'s INV-6 exists to rule out.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **An item's own "Do" line describing "reuse the same scale/origin
+    derivation" can still under-specify the actual work** — extracting
+    `computeFit` was exactly what was asked for and was sufficient for a
+    dead-straight route, but a point that needs to be *located* inside that
+    fit's coordinate space (rather than simply read off pre-unwrapped
+    segment data the way `projectSegments` does) needed its own unwrapping
+    logic the item never mentioned. Worth checking whether "reuse X" also
+    implies "and handle the input shapes X's existing callers never had to,"
+    not just "call the same function."
+  - **A self-review finding that says "this specific input can't occur
+    through today's one real call path" is not, by itself, a reason to skip
+    the fix** — `CLAUDE.md`'s "don't validate scenarios that can't happen"
+    rule is about scenarios structurally excluded by the type system or the
+    domain, not about "no caller happens to pass this today." `M1-16` is
+    about to give this function its first real caller, and a defensive guard
+    that costs three lines and matches an existing codebase precedent is
+    cheap insurance against a silent, hard-to-notice rendering bug — worth
+    distinguishing "impossible" from "merely unexercised so far" before
+    invoking that rule to leave a finding unfixed.
+  - **`list_workflow_jobs`' job objects for a never-scheduled run now omit
+    `runner_id`/`runner_name` entirely** rather than returning them as `0`/
+    empty string (iteration 25's shape) or requiring a separate `404` from
+    `get_job_logs` (iteration 26's shape) — a third distinct tool-level
+    presentation of the identical underlying signal. Worth checking for the
+    *absence* of these fields, not just falsy/empty values, when confirming
+    a job never ran.
+- **Follow-ups filed:** none. `M1-16` (depends on `M1-04`, `M1-14`, `M1-15` —
+  all now `done`) is next in dependency order and is exactly where this
+  function gets its first real caller.
