@@ -964,7 +964,7 @@ coordinate), with a regression test.
 
 ### [ ] M1-16 — The flight screen: chart, card and the live marker
 
-**Status:** todo · **Size:** M · **Depends on:** M1-04, M1-14, M1-15
+**Status:** in-progress · **Size:** M · **Depends on:** M1-04, M1-14, M1-15
 **Read first:** `apps/mobile/src/ui/screens/FlightCard.tsx` (the required
 `now: () => number` prop and the ref-based 1 Hz interval that survives a
 fresh inline closure every render — the marker's own frame loop needs the
