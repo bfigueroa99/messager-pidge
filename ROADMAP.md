@@ -1039,7 +1039,7 @@ screenshot pair)
 
 ### [ ] M1-17 — Constrain the chart's pinch-to-zoom
 
-**Status:** todo · **Size:** S · **Depends on:** M1-16
+**Status:** in-progress · **Size:** S · **Depends on:** M1-16
 
 **Why:** Split from `M1-06` (see its resolution note).
 `docs/PRODUCT.md` §9 is explicit that this app never holds a precise
