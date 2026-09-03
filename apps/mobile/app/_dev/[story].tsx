@@ -1,11 +1,11 @@
 import { useLocalSearchParams } from 'expo-router';
 import type { ComponentType } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { arcSegments, projectSegments, type PublicFlight, type Viewport } from '@pidge/flight-sim';
+import { arcSegments, maxZoomForMinVisibleKm, projectSegments, type PublicFlight, type Viewport } from '@pidge/flight-sim';
 
 import { APP_NAME } from '../../src/config/app-name';
 import { FlightMap } from '../../src/ui/screens/FlightMap';
-import { FlightScreen } from '../../src/ui/screens/FlightScreen';
+import { FlightScreen, MIN_VISIBLE_KM } from '../../src/ui/screens/FlightScreen';
 
 /**
  * Renders one component in isolation with fixed props, for `scripts/shot.mjs`
@@ -42,13 +42,15 @@ const LAX = { lat: 34.0522, lon: -118.2437 };
 const FLIGHT_MAP_VIEWPORT: Viewport = { width: 393, height: 400 };
 
 function FlightMapStory() {
-  const segments = projectSegments(arcSegments(TOKYO, LAX), FLIGHT_MAP_VIEWPORT, 0.1);
+  const rawSegments = arcSegments(TOKYO, LAX);
+  const segments = projectSegments(rawSegments, FLIGHT_MAP_VIEWPORT, 0.1);
+  const maxZoom = maxZoomForMinVisibleKm(rawSegments, FLIGHT_MAP_VIEWPORT, 0.1, MIN_VISIBLE_KM);
   return (
     <View style={styles.screen} testID="ready">
       {/* 0.5: a fixed, deterministic progress that screenshots both the solid
        * flown half and the dashed remaining half `M1-14` added, not just the
        * all-solid route `M1-13` drew. */}
-      <FlightMap segments={segments} viewport={FLIGHT_MAP_VIEWPORT} progress={0.5} />
+      <FlightMap segments={segments} viewport={FLIGHT_MAP_VIEWPORT} progress={0.5} maxZoom={maxZoom} />
     </View>
   );
 }

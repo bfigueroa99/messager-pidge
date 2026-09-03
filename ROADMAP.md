@@ -1037,9 +1037,9 @@ screenshot pair)
 
 ---
 
-### [ ] M1-17 — Constrain the chart's pinch-to-zoom
+### [x] M1-17 — Constrain the chart's pinch-to-zoom
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-16
+**Status:** done · **Size:** S · **Depends on:** M1-16
 
 **Why:** Split from `M1-06` (see its resolution note).
 `docs/PRODUCT.md` §9 is explicit that this app never holds a precise
@@ -1061,10 +1061,61 @@ here needs an ADR in `docs/DECISIONS.md` in the same commit, per
   marker's position is unaffected by the viewport the user is looking through.
 
 **Acceptance criteria:**
-- [ ] at maximum pinch the visible span is never under 25 km
+- [x] at maximum pinch the visible span is never under 25 km
 
-**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`,
-`FlightMap.test.tsx`
+**Resolution note:** the "how far can we zoom in" question turned out to be
+pure geography, not UI state, so `CLAUDE.md`'s layering rule put it in
+`packages/flight-sim` rather than inline in `FlightMap.tsx` as the item's own
+`Touches` guess assumed: `project.ts` gained `maxZoomForMinVisibleKm`
+(segments, viewport, paddingRatio, minVisibleKm) → the greatest zoom factor
+before the *whole viewport's* visible geographic window (not just the
+route's own bounding box — the padding margin is still on-screen) would
+drop under `minVisibleKm`, using the same `computeFit` `projectSegments`/
+`projectPoint` already share (widened to also expose `minLat`, needed to
+locate the fit's own center). `FlightScreen.tsx` computes it once via
+`useMemo` (`MIN_VISIBLE_KM = 25`, exported alongside the existing
+`PADDING_RATIO`) and hands it to `FlightMap` as a new required `maxZoom`
+prop; the `flight-map` dev story needed the same one-line wiring. `FlightMap`
+itself only clamps a live gesture value against that number — it derives
+nothing.
+
+Pinch (two-finger) and pan (one-finger) both go through one `PanResponder` —
+confirmed, not assumed, to be genuinely simulatable in this container's
+`jest-expo/web` + `@testing-library/react` setup: `react-native-web`
+implements the responder system on top of real `touchstart`/`touchmove` DOM
+events (not React's synthetic `onTouchStart` props), so `fireEvent.touchStart`/
+`touchMove` with a `touches`/`changedTouches` array reproduces genuine
+multi-touch gestures in `FlightMap.test.tsx`, including the exact-zoom and
+never-past-`maxZoom` assertions, without a single manual/visual check.
+
+Self-review (`/code-review --effort high`) found two real correctness gaps
+beyond the listed acceptance criterion: (1) a zoom already in effect was
+never re-clamped if `maxZoom` itself shrank between renders with no new
+gesture (a new, shorter flight; a rotated device) — fixed by re-deriving the
+*displayed* zoom as `clamp(zoom, 1, maxZoom)` on every render rather than
+only inside the gesture handler, regression-tested by pinching in then
+re-rendering with a smaller `maxZoom` and asserting the display drops
+immediately; (2) a pinch starting with both touches at the same point
+divided by a near-zero distance, producing `NaN`/`Infinity` — fixed by
+re-basing the pinch's start distance instead of dividing when it is under a
+1px floor, regression-tested with a coincident-touch pinch start. Also
+applied: reused `@pidge/flight-sim`'s existing `clamp` instead of a second,
+independently-written copy in `FlightMap.tsx`; lazily initialized the
+`PanResponder` (a plain `useRef(PanResponder.create(...))` still evaluates
+and discards that call on every render, and `FlightScreen` re-renders this
+component up to 60 times a second).
+
+No `supabase/`, auth, or RLS touched — no `/security-review` per
+`docs/LOOP.md` §4. No new runtime dependency — `PanResponder` is `react-native`'s
+own built-in touch-responder system, not `react-native-gesture-handler` or
+similar, so no ADR was needed.
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts` (new
+`maxZoomForMinVisibleKm`, not in the item's original `Touches` guess — see
+the resolution note), `apps/mobile/src/ui/screens/FlightMap.tsx`,
+`FlightMap.test.tsx`, `apps/mobile/src/ui/screens/FlightScreen.tsx` (wires
+the new `maxZoom` prop), `apps/mobile/app/_dev/[story].tsx` (the
+`flight-map` story now supplies `maxZoom` too).
 
 ---
 

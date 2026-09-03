@@ -2905,3 +2905,147 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none as new `ROADMAP.md` items. `M1-17` (pinch/pan
   gesture wiring, depends on `M1-16` — now `done`) is next in dependency
   order.
+
+---
+
+## Iteration 29 — 2026-09-03 — M1-17
+
+- **Outcome:** done
+- **CI:** the tip's own most recent runs on `claude/app-development-loop-szg7yj`
+  all completed in ~3-5 seconds via `list_workflow_jobs`/`get_job_logs` — the
+  latter returned a bare `HTTP 404` (iteration 26's presentation of the same
+  signal), the job objects themselves carrying no `runner_id`/`runner_name`
+  at all. The same never-scheduled shape `Q-003` documents; already noted
+  there, nothing new to add. Not this iteration's item.
+- **Selection:** `iteration(29) - last_hardening_iteration(25) = 4 < 5`;
+  `iteration(29) - last_audit_iteration(21) = 8 < 10`. Neither override
+  fired. `M1-05` and `M1-06` are both `[ ]` in `ROADMAP.md` but their own
+  `**Status:**` field reads `split`, not `todo` — they are already resolved,
+  not pending work — so the topmost genuine `todo` with satisfied
+  dependencies is `M1-17` (`M1-16` done). Size `S`, no split needed.
+- **Verify:** typecheck ok · lint ok · 205 tests ok (floor raised 193 → 205,
+  +12 new `[M1-17]` tests: 5 pure-function tests in `project.test.ts` for
+  `maxZoomForMinVisibleKm`, and 7 gesture tests in `FlightMap.test.tsx` — 5
+  from the initial implementation plus 2 added as self-review regression
+  tests, below) · flight-sim coverage 98.37%/90% aggregate for `project.ts`
+  (both still above the 90%/85% gate) · `gate:roadmap` ok (26 done, 6
+  pending) · `gate:tests` ok (floor raised to 205)
+- **What landed:** the pinch-to-zoom floor `PRODUCT.md` §9 requires: the
+  chart can never be pinched in far enough to show less than 25 km of
+  geography, protecting the loft's city-centroid-snap privacy promise from
+  being undermined at the UI layer alone.
+  - `packages/flight-sim/src/project.ts` gained `maxZoomForMinVisibleKm`
+    (segments, viewport, paddingRatio, minVisibleKm) — the actual enforcement
+    of the acceptance criterion, and pure geography per `CLAUDE.md`'s
+    layering rule rather than something computed inline in `FlightMap.tsx` as
+    the item's own `Touches` guess assumed (this item's own resolution note
+    in `ROADMAP.md` has the full derivation: a single shared pixel-per-degree
+    `scale` means the viewport's unzoomed window in degrees is
+    `viewport.{width,height} / scale`, converted to km via `haversineKm` at
+    the fit's own center latitude, with whichever axis is smaller — the one
+    nearer the pole — being the one that binds). `Fit` (the `computeFit`
+    helper `projectSegments`/`projectPoint` already shared) gained `minLat`
+    to its returned fields — it was already computed internally but not
+    exposed, and this function needed it to locate the fit's own center.
+  - `FlightScreen.tsx` computes `maxZoom` once via `useMemo` (a new exported
+    `MIN_VISIBLE_KM = 25`, alongside the existing `PADDING_RATIO`) and passes
+    it to `FlightMap` as a new required prop; `FlightMap` itself derives
+    nothing from geography, it only clamps a live gesture value against the
+    number it is handed — the same division of responsibility `M1-15`/`M1-16`
+    already established between the two files.
+  - `FlightMap.tsx` wires pinch (two-finger) and pan (one-finger) through one
+    `PanResponder` — the item's own "Do" line's "built-in touch-responder
+    APIs," not a third-party gesture-handling dependency, so no ADR was
+    needed. Both gestures share one touch-tracking scheme: a `gestureStartRef`
+    snapshot (distance, midpoint/single-touch point, zoom, pan at gesture
+    start) reset whenever the number of active touches changes, so a finger
+    lifted or added mid-gesture never causes a jump. The zoom/pan themselves
+    never touch `flightStateAt` or the marker's position — purely a viewport
+    transform (`<G transform="translate(pan) translate(center) scale(zoom)
+    translate(-center)">` wrapping the existing polylines/marker), matching
+    the item's own "Do NOT" line.
+  - **Confirmed, not assumed, that a real multi-touch gesture is testable in
+    this container's stack**: `react-native-web` implements the responder
+    system on top of genuine `touchstart`/`touchmove` DOM events (a global
+    listener on `document`, not React's synthetic `onTouchStart` props), so
+    `@testing-library/react`'s `fireEvent.touchStart`/`touchMove` — given a
+    `touches` **and** `changedTouches` array (the library's default touch
+    event only carries the former; `react-native-web`'s `createResponderEvent`
+    reads `force`/coordinates off `changedTouches[0]`, and omitting it throws
+    `Cannot read properties of undefined (reading 'force')`, not a silent
+    no-op) — reproduces an actual pinch gesture end to end, provable by
+    reading the rendered `<G>`'s own `transform` attribute afterward. This
+    was genuinely uncertain going in (the alternative, had it not worked,
+    would have been restructuring around plain `onTouchStart`/`onTouchMove`
+    props instead of the responder system) and was verified by running the
+    new tests against the real implementation before trusting them, not
+    assumed from reading the library's source.
+  - Self-review (`/code-review --effort high`) found two real correctness
+    gaps beyond the listed acceptance criterion, both fixed and
+    regression-tested:
+    1. A zoom already in effect was never re-clamped if `maxZoom` itself
+       shrank between renders with no new gesture (a new, shorter flight
+       mounting the same `FlightMap`; a device rotation changing the
+       viewport) — the component would keep displaying a zoom that now
+       breaches the 25 km floor until the user happened to start a fresh
+       pinch. Fixed by deriving the *displayed* zoom as `clamp(zoom, 1,
+       maxZoom)` fresh on every render (and feeding that clamped value, not
+       the raw gesture state, back into the ref a new gesture bases itself
+       on) rather than clamping only inside the gesture handler.
+    2. A pinch gesture that starts with both touches at (near-)the same
+       point — plausible touch-hardware quantization, or a second finger
+       landing exactly on the first before separating — divided by a
+       (near-)zero baseline distance, producing `NaN`/`Infinity`, which
+       `clamp` passes through unchanged (`NaN`'s comparisons are all false).
+       Fixed by re-basing the pinch's own start distance from the current
+       touches instead of dividing, whenever that start distance is under a
+       1px floor, so the gesture picks up cleanly once the fingers actually
+       separate rather than producing a broken frame.
+    3. (Maintainability) `FlightMap.tsx` had reimplemented `clamp` locally
+       rather than importing the identical one-liner `@pidge/flight-sim`
+       already exports (`speed.ts`, already used by `project.ts` for this
+       same purpose) — switched to the shared one. Also: a plain
+       `useRef(PanResponder.create(...))` still evaluates and discards that
+       call's full closure graph on every render, not just the first
+       (`useRef`'s *argument* is evaluated unconditionally; only the *ref
+       itself* is created once) — `FlightScreen` re-renders `FlightMap` on
+       every animation frame, so this was rebuilding the responder up to 60
+       times a second for nothing. Fixed with the lazy
+       `if (ref.current === null) ref.current = ...` pattern.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **`ROADMAP.md`'s `[ ]`/`[x]` checkbox and its own `**Status:**` field can
+    disagree, and the status field is the one that's authoritative for
+    selection** — `M1-05` and `M1-06` both show `[ ]` (an unticked checkbox)
+    but `**Status:** split`, meaning they were fully resolved by being broken
+    into smaller items, not left pending. Reading only the checkbox column
+    (as a quick `grep '^### \['` scan does) would misidentify one of them as
+    the topmost `todo` and try to re-do work already split apart three and
+    four iterations ago. Worth checking the `**Status:**` line, not just the
+    checkbox, whenever `grep`ing the roadmap for the next item.
+  - **A "prefer built-in touch-responder APIs" instruction is testable
+    end-to-end in this container's `jest-expo/web` stack, but not for free**:
+    `react-native-web`'s responder system listens for genuine DOM
+    `touchstart`/`touchmove`/`mousedown` events rather than React's synthetic
+    `onTouchStart` props, so `fireEvent.touchStart`/`touchMove` does reach it
+    — but only once given both `touches` **and** `changedTouches` on the
+    event payload. Worth verifying a gesture-testing approach against the
+    real implementation early (a two-minute spike) before writing five tests
+    around it, rather than assuming either "this can't be tested in jsdom" or
+    "this will just work" from reading the library's source alone.
+  - **A value clamped only inside an event handler can still drift out of
+    bounds** the moment the *bound itself* changes for a reason unrelated to
+    that handler (a new prop from a re-render, not a new gesture) — the
+    `maxZoom`-shrinks-mid-render gap above is the same shape of bug as
+    `M1-16`'s "loop that doesn't know when to stop," one level removed: not
+    "does this update ever run past when it should," but "does this
+    *invariant* get re-checked on every path that could invalidate it, not
+    just the one path that happened to be written first." Worth asking, for
+    any prop-derived ceiling/floor a component clamps a local state value
+    against, whether the prop can change out from under an already-set state
+    value without a new user action to trigger a re-clamp.
+- **Follow-ups filed:** none as new `ROADMAP.md` items. `M1-07` (compose and
+  release, depends on `M1-02`/`M1-03` — both `done`) is next in dependency
+  order; `M1-08` (arrival/death, size `L`, must be split before starting) is
+  the one after that, still partly blocked by `Q-002` for its Realtime half.

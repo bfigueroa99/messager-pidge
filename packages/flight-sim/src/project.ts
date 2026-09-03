@@ -1,3 +1,4 @@
+import { haversineKm } from './geo';
 import { clamp } from './speed';
 import type { LatLng } from './types';
 
@@ -53,6 +54,7 @@ interface Fit {
   readonly originY: number;
   readonly minLon: number;
   readonly maxLon: number;
+  readonly minLat: number;
   readonly maxLat: number;
   readonly unwrappedLons: readonly (readonly number[])[];
 }
@@ -88,7 +90,7 @@ function computeFit(
   const originX = (viewport.width - spanLon * scale) / 2;
   const originY = (viewport.height - spanLat * scale) / 2;
 
-  return { scale, originX, originY, minLon, maxLon, maxLat, unwrappedLons };
+  return { scale, originX, originY, minLon, maxLon, minLat, maxLat, unwrappedLons };
 }
 
 /**
@@ -171,6 +173,54 @@ export function projectPoint(
     x: fit.originX + (lon - fit.minLon) * fit.scale,
     y: fit.originY + (fit.maxLat - point.lat) * fit.scale,
   };
+}
+
+/**
+ * The greatest zoom factor `FlightMap` may apply while the user pinches in
+ * before the geographic span visible across the *whole* viewport (not just
+ * the route's own bounding box — the padding margin is still on-screen too)
+ * would shrink under `minVisibleKm`. Computed from the identical fit
+ * `projectSegments`/`projectPoint` share, so it always agrees with what is
+ * actually drawn. `PRODUCT.md` §9's "we never store a precise location"
+ * promise would otherwise be underminable at the UI layer alone: pinching a
+ * route down to street-level detail makes the loft's city-centroid snap feel
+ * broken even though the stored coordinate itself is still coarse.
+ *
+ * A single shared pixel-per-degree `scale` maps both axes (see `computeFit`),
+ * so the viewport's unzoomed window in degrees is `viewport.{width,height} /
+ * fit.scale` on each axis; zooming by `Z` shrinks both windows by the same
+ * `1/Z`. The window nearer the pole (in km) is the one that binds first, so
+ * this measures both axes at the fit's own center latitude and returns
+ * whichever is smaller.
+ *
+ * Never returns less than 1: `M1-12`'s own fit-to-bounds view is the resting
+ * zoom, and this only bounds zooming *in* past it — it never forces a route
+ * that is already short of `minVisibleKm` at rest to zoom out further.
+ */
+export function maxZoomForMinVisibleKm(
+  segments: readonly (readonly LatLng[])[],
+  viewport: Viewport,
+  paddingRatio: number,
+  minVisibleKm: number,
+): number {
+  if (segments.length === 0) return Infinity;
+
+  const fit = computeFit(segments, viewport, paddingRatio);
+  const centerLat = (fit.minLat + fit.maxLat) / 2;
+  const centerLon = (fit.minLon + fit.maxLon) / 2;
+  const lonWindowDeg = viewport.width / fit.scale;
+  const latWindowDeg = viewport.height / fit.scale;
+
+  const widthKm = haversineKm(
+    { lat: centerLat, lon: centerLon - lonWindowDeg / 2 },
+    { lat: centerLat, lon: centerLon + lonWindowDeg / 2 },
+  );
+  const heightKm = haversineKm(
+    { lat: centerLat - latWindowDeg / 2, lon: centerLon },
+    { lat: centerLat + latWindowDeg / 2, lon: centerLon },
+  );
+
+  return Math.max(1, Math.min(widthKm, heightKm) / minVisibleKm);
 }
 
 /** `projectSegments()`'s output, partitioned at a point along the route. */

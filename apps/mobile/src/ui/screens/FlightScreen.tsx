@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import {
   arcSegments,
   flightStateAt,
+  maxZoomForMinVisibleKm,
   projectPoint,
   projectSegments,
   type PublicFlight,
@@ -22,6 +23,10 @@ const TICK_MS = 1000;
  * second, independently hand-copied literal that could silently drift from
  * it. */
 export const PADDING_RATIO = 0.1;
+/** `M1-17`'s pinch-to-zoom floor — `PRODUCT.md` §9's promise that this app
+ * never holds a precise location, enforced at the chart itself: the user can
+ * never pinch in far enough to see less than this many kilometres. */
+export const MIN_VISIBLE_KM = 25;
 
 export interface FlightScreenProps {
   readonly flight: PublicFlight;
@@ -115,6 +120,10 @@ export function FlightScreen({
     [rawSegments, viewport.width, viewport.height],
   );
   const markerPoint = projectPoint(state.position, rawSegments, viewport, PADDING_RATIO);
+  const maxZoom = useMemo(
+    () => maxZoomForMinVisibleKm(rawSegments, viewport, PADDING_RATIO, MIN_VISIBLE_KM),
+    [rawSegments, viewport.width, viewport.height],
+  );
 
   return (
     <View style={styles.screen} testID="flight-screen">
@@ -123,6 +132,7 @@ export function FlightScreen({
         viewport={viewport}
         progress={state.progress}
         markerPoint={markerPoint}
+        maxZoom={maxZoom}
       />
       <Text style={styles.title}>{APP_NAME}</Text>
       <FlightCard

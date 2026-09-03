@@ -1,11 +1,15 @@
-import { arcSegments, interpolate } from './geo';
+import { arcSegments, haversineKm, interpolate } from './geo';
 import { LAX, LONDON, NYC, SYDNEY, TOKYO } from './__fixtures__/cities';
 import { planFlight } from './plan';
 import { flightStateAt } from './state';
-import { projectPoint, projectSegments, splitAtProgress } from './project';
+import { maxZoomForMinVisibleKm, projectPoint, projectSegments, splitAtProgress, type ProjectedPoint } from './project';
+import type { LatLng } from './types';
 
 const VIEWPORT = { width: 400, height: 800 };
 const PADDING_RATIO = 0.1;
+// A few km from LAX — short enough that it needs far less zoom to reach a
+// 25 km visible span than the LA-to-NYC route does.
+const LAX_NEARBY: LatLng = { lat: LAX.lat + 0.05, lon: LAX.lon + 0.05 };
 
 function boundsOf(projected: readonly { readonly x: number; readonly y: number }[][]) {
   const xs = projected.flatMap((segment) => segment.map((p) => p.x));
@@ -211,5 +215,78 @@ describe('projectPoint', () => {
     expect(Number.isFinite(projected.y)).toBe(true);
     expect(projected.x).toBeGreaterThanOrEqual(0);
     expect(projected.x).toBeLessThanOrEqual(VIEWPORT.width);
+  });
+});
+
+describe('maxZoomForMinVisibleKm', () => {
+  // Independent of `computeFit`'s own internals: derives the same
+  // pixel-per-degree scale `projectSegments` actually drew with by measuring
+  // it off two of that route's own projected points, rather than trusting
+  // `maxZoomForMinVisibleKm`'s internal formula to check itself.
+  function measuredScale(rawSegments: readonly (readonly LatLng[])[], projected: readonly (readonly ProjectedPoint[])[]) {
+    const a = rawSegments[0]![0]!;
+    const b = rawSegments[0]![1]!;
+    const pa = projected[0]![0]!;
+    const pb = projected[0]![1]!;
+    const pixelDistance = Math.hypot(pb.x - pa.x, pb.y - pa.y);
+    const degreeDistance = Math.hypot(b.lon - a.lon, b.lat - a.lat);
+    return pixelDistance / degreeDistance;
+  }
+
+  it("[M1-17] at the returned maximum zoom, a LA to NYC route's narrower visible dimension is exactly minVisibleKm", () => {
+    const segments = arcSegments(LAX, NYC);
+    const minVisibleKm = 25;
+
+    const maxZoom = maxZoomForMinVisibleKm(segments, VIEWPORT, PADDING_RATIO, minVisibleKm);
+    const projected = projectSegments(segments, VIEWPORT, PADDING_RATIO);
+    const scale = measuredScale(segments, projected);
+
+    const allPoints = segments.flat();
+    const centerLat = (Math.min(...allPoints.map((p) => p.lat)) + Math.max(...allPoints.map((p) => p.lat))) / 2;
+    const centerLon = (Math.min(...allPoints.map((p) => p.lon)) + Math.max(...allPoints.map((p) => p.lon))) / 2;
+    const lonWindowDeg = VIEWPORT.width / scale;
+    const latWindowDeg = VIEWPORT.height / scale;
+
+    const widthKm = haversineKm(
+      { lat: centerLat, lon: centerLon - lonWindowDeg / 2 },
+      { lat: centerLat, lon: centerLon + lonWindowDeg / 2 },
+    );
+    const heightKm = haversineKm(
+      { lat: centerLat - latWindowDeg / 2, lon: centerLon },
+      { lat: centerLat + latWindowDeg / 2, lon: centerLon },
+    );
+    const visibleSpanAtMaxZoom = Math.min(widthKm, heightKm) / maxZoom;
+
+    expect(visibleSpanAtMaxZoom).toBeCloseTo(minVisibleKm, 6);
+  });
+
+  it('[M1-17] never returns less than 1 — it only bounds zooming in, never forces zooming out past the fit-to-bounds view', () => {
+    const segments = arcSegments(LAX, NYC);
+
+    // A minimum visible span far larger than the whole route already shows
+    // at rest would otherwise drive the formula below 1.
+    const maxZoom = maxZoomForMinVisibleKm(segments, VIEWPORT, PADDING_RATIO, 1_000_000);
+
+    expect(maxZoom).toBe(1);
+  });
+
+  it('[M1-17] a stricter (larger) minimum visible span never allows more zoom than a looser (smaller) one', () => {
+    const segments = arcSegments(LAX, NYC);
+
+    const loose = maxZoomForMinVisibleKm(segments, VIEWPORT, PADDING_RATIO, 5);
+    const strict = maxZoomForMinVisibleKm(segments, VIEWPORT, PADDING_RATIO, 25);
+
+    expect(strict).toBeLessThan(loose);
+  });
+
+  it('[M1-17] a longer route (more to zoom into before hitting 25 km) allows more maximum zoom than a shorter one', () => {
+    const short = maxZoomForMinVisibleKm(arcSegments(LAX, LAX_NEARBY), VIEWPORT, PADDING_RATIO, 25);
+    const long = maxZoomForMinVisibleKm(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO, 25);
+
+    expect(long).toBeGreaterThan(short);
+  });
+
+  it('[M1-17] returns Infinity for an empty segments array rather than dividing by a zero-size fit', () => {
+    expect(maxZoomForMinVisibleKm([], VIEWPORT, PADDING_RATIO, 25)).toBe(Infinity);
   });
 });
