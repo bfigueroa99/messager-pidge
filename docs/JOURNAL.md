@@ -3049,3 +3049,203 @@ knowledge survives a context reset.
   release, depends on `M1-02`/`M1-03` — both `done`) is next in dependency
   order; `M1-08` (arrival/death, size `L`, must be split before starting) is
   the one after that, still partly blocked by `Q-002` for its Realtime half.
+
+---
+
+## Iteration 30 — 2026-09-03 — HARDENING
+
+- **Outcome:** done
+- **CI:** the tip's own most recent run (`4768126`, job `100478260050`)
+  completed in 3 seconds with no `runner_id`/`runner_name` on the job object
+  at all, and `get_job_logs` 404'd on the actual log content despite
+  returning a real (if useless) `logs_url` this time — a fourth distinct
+  tool-level presentation of the same never-scheduled signal `Q-003`
+  documents, this time with the run's own top-level `conclusion` field
+  reading `"failure"` rather than blank/success. The 3-second runtime and the
+  404 on real content are what settled it, not the `conclusion` field, which
+  this iteration cannot trust as evidence either way for a run that never
+  actually scheduled. Not this iteration's item.
+- **Selection:** `iteration(30) - last_hardening_iteration(25) = 5 >= 5` —
+  the hardening override fires. `iteration(30) - last_audit_iteration(21) =
+  9 < 10`, so not an audit. HARDENING per `docs/LOOP.md` §6.
+- **Verify:** typecheck ok · lint ok · 209 tests ok (floor raised 205 → 209,
+  +4: `[M1-15]` `computeFit` empty-guard test, 3 `[M1-17]` `screenDistance`/
+  `screenMidpoint` tests) · flight-sim coverage 99.07%/90.9% aggregate
+  (`project.ts` itself 98.49%/90.62%, both still above the 90%/85% gate;
+  only remaining uncovered line, 345, is `splitSegment`'s pre-existing
+  unreachable fallback — present before this iteration, out of scope here)
+  · `gate:roadmap` ok (26 done, 8 pending — two new `todo` items filed, see
+  below) · `gate:tests` ok (floor raised to 209)
+- **What landed:** worked `docs/LOOP.md` §6's checklist against the diff
+  accumulated since the last hardening pass (`2215ec3..4768126`, ~1,000
+  lines across `M1-15`, `M1-16`, `M1-17`):
+  1. Ticked-without-a-test criteria: none — `gate:roadmap` already ok.
+  2. Dead code: `npx knip` repeated the same already-triaged false
+     positives every prior pass has logged (Edge Function entry points and
+     script-only modules invisible to a static-import scanner, `expo-font`,
+     the phantom `expo-updates` dependency, `jest.config.js`'s `projects`
+     shorthand, `tokens.ts`/`typography.ts`'s forward-built exports still
+     waiting on `M1-07`). Nothing new.
+  3. `/simplify` (4 parallel agents — reuse, simplification, efficiency,
+     altitude — against the `2215ec3..4768126` diff) surfaced real findings
+     in all four categories; applied the ones that were genuine waste or
+     duplication without changing any tested behaviour:
+     - **Efficiency, the highest-value fix:** `FlightScreen` independently
+       re-derived `project.ts`'s `Fit` (the scale/origin the whole chart is
+       drawn against) three times per render — once each inside
+       `projectSegments`, `projectPoint` and `maxZoomForMinVisibleKm`, all
+       with identical `(rawSegments, viewport, PADDING_RATIO)` inputs, on a
+       component that re-renders up to 60x/sec via `requestAnimationFrame`.
+       `project.ts` now exports `computeFit` plus `projectSegmentsWithFit`/
+       `projectPointWithFit`/`maxZoomForMinVisibleKmWithFit` — the original
+       three functions now just guard emptiness and delegate to these.
+       `FlightScreen` computes the fit once via `useMemo` and hands it to
+       all three consumers. `computeFit` itself gained the same
+       empty-segments throw `projectPoint` already had (the other two guard
+       before ever calling it, so their own behaviour is unchanged) —
+       needed because `FlightScreen` now calls it directly, bypassing those
+       guards, and this is exactly the "before a real caller exists" case
+       `M1-15`'s own self-review flagged when it first added that guard to
+       `projectPoint`.
+     - **Reuse:** `FlightMap`'s `pinchDistance`/`gesturePoint` hand-rolled
+       `Math.hypot`/averaging instead of reusing `project.ts`'s own
+       polyline-length primitive (previously private, same shape as what a
+       touch-distance calculation needs). Extracted and exported as
+       `screenDistance`/`screenMidpoint`; both the chart's own
+       segment-length math and the pinch gesture's now call the same two
+       functions.
+     - **Simplification:** `FlightMap` carried a `maxZoomRef` and an inner
+       `clamp(...)` call inside the pinch handler, but the render-time
+       `displayZoom = clamp(zoom, MIN_ZOOM, maxZoom)` already re-derives
+       from the live `maxZoom` prop on every render regardless (including
+       the one the gesture's own `setZoom` triggers) — the inner clamp
+       could never produce a different displayed result. Removed the ref
+       and the inner clamp; `setZoom` now sets the raw, unclamped factor
+       and lets the one render-time clamp be the only clamp. Verified this
+       doesn't change any `[M1-17]` test's outcome by tracing why: new
+       gestures always re-base from `zoomRef.current`, which mirrors
+       `displayZoom` (the already-clamped value), not the raw `zoom` state
+       — so an unclamped raw state never leaks into what's drawn or what a
+       later gesture starts from.
+     - **Simplification:** `FlightMap`'s `onPanResponderRelease`/
+       `onPanResponderTerminate` were byte-identical bodies; collapsed into
+       one `endGesture` handler.
+     - **Efficiency:** `startGesture` was declared fresh on every render
+       even though only the very first render's copy is ever used (it's
+       only referenced from inside the `PanResponder` built once in the
+       `panResponderRef.current === null` lazy-init guard, the same pattern
+       `M1-17`'s own self-review already applied to `PanResponder.create`
+       itself). Moved the declaration inside that same guard.
+     - **Reuse:** `FlightMap`'s local `MIN_ZOOM = 1` and
+       `maxZoomForMinVisibleKm`'s own `Math.max(1, ...)` floor encoded the
+       same fact — `M1-12`'s fit-to-bounds resting zoom — as two
+       independent `1` literals. `project.ts` now exports `REST_ZOOM = 1`;
+       both sides read it (`maxZoomForMinVisibleKmWithFit`'s floor is now
+       `clamp(..., REST_ZOOM, Infinity)`, `FlightMap`'s `MIN_ZOOM` is now
+       `REST_ZOOM`).
+     - **Efficiency:** `FlightCard` wasn't memoized, so `FlightScreen`'s own
+       60x/sec re-renders (driving the marker) were re-running `FlightCard`'s
+       `flightStateAt`/`formatEta`/`formatDistance` work on every one of
+       those frames too, even though its props (`flight`, `originName`,
+       `destinationName`, `unit`, `now`) are all reference-stable across
+       `FlightScreen`'s self-driven re-renders (verified: `FlightScreen`'s
+       own state update, not a parent re-render, is what causes those
+       60x/sec re-renders, and none of the props it hands `FlightCard`
+       change identity because of it) — defeating `FlightCard`'s own
+       deliberate 1 Hz throttle 59 times out of 60. Wrapped in `React.memo`.
+     - **Reuse, deliberately skipped:** merging `FlightCard`'s and
+       `FlightScreen`'s independent ticking-clock timers (both the same
+       `useState(() => now()) + ref + setInterval` shape) into one shared
+       hook. `FlightScreen.test.tsx`'s own `[M1-16]` test
+       ("stops rescheduling ticks once the flight has arrived...") literally
+       asserts `jest.getTimerCount()` is `2` before arrival — two live
+       timers is `M1-16`'s own documented, intentional architecture, not an
+       accident this pass gets to unilaterally redesign. Left alone; noted
+       below as a real, if now-frozen, future consideration.
+     - **Reuse, deliberately skipped:** the same demo LA→NYC flight fixture
+       (coordinates, `distanceKm: 3936`, `DURATION_MS = 79_380_000`, the
+       40%-elapsed anchor) is hand-typed independently in `FlightCard.test.tsx`,
+       `FlightScreen.test.tsx`, `app/_dev/[story].tsx` and
+       `app/flight-demo.tsx`. Real duplication, but consolidating it touches
+       two production route files with their own byte-identical-screenshot
+       tests (`tests/shot.test.ts`) for what is otherwise a test-only DRY
+       concern — the risk of a subtle diff destabilizing an already-passing
+       screenshot pair outweighed the benefit for this pass. Left alone.
+  4. Coverage: `project.ts`'s two newly-uncovered lines from the refactor
+     (`computeFit`'s new empty-guard, `screenMidpoint`'s body) got direct
+     `[M1-15]`/`[M1-17]` tests rather than being left to drift — restores
+     full coverage of the new code rather than merely staying above the
+     aggregate threshold. The one remaining uncovered line (`splitSegment`'s
+     fallback, `project.ts:345`) predates this iteration (already uncovered
+     in the iteration 29 baseline) and is out of this pass's scope.
+  5. `any`/`@ts-ignore`/`TODO`/`FIXME`: grepped the real source tree
+     directly for the literal tokens — none found, same as every prior
+     hardening pass.
+  6. Dependencies without an ADR: none — no `package.json`/`pnpm-lock.yaml`
+     change in the diffed range at all.
+  - Self-review (`/code-review --effort high`) run against the full
+    `2215ec3..4768126` diff (not just this pass's own edits, unlike
+    iteration 25's narrower scope) surfaced five findings. Two
+    (`projectPoint` recomputing `computeFit` unmemoized every frame; hand-
+    rolled pinch-distance math) turned out to already be exactly what this
+    pass's own `/simplify` fixes above had just resolved — confirmed by
+    re-reading the current file state, not assumed. A third (`FlightMap`'s
+    pinch/pan `pan` offset never reconciled when `segments`/`viewport`
+    change, e.g. a device rotation after a pan gesture) and a fourth (the
+    marker `<Circle>` and route `<Polyline>`s live inside the same
+    `<G transform="...scale(displayZoom)...">`, so neither compensates for
+    zoom — at a real route's own `maxZoom` the marker/stroke blow up to
+    hundreds of pixels, covering the screen) are real, pre-existing bugs in
+    already-shipped `M1-16`/`M1-17` code, unrelated to anything this pass
+    touched. Neither is on `docs/LOOP.md` §6's checklist and both are
+    correctness fixes, not simplifications, so — rather than expanding this
+    hardening pass into unplanned feature-adjacent work — filed as new
+    roadmap items, `M1-18` and `M1-19`, with their own `Do`/`Do NOT`/
+    acceptance criteria for a future iteration to pick up. The fifth finding
+    (`maxZoomForMinVisibleKm` returns `Infinity` for an empty `segments`
+    array while `projectPoint` throws for the same input) was judged not a
+    bug: `maxZoomForMinVisibleKm`'s own docstring and its existing
+    `[M1-17]` test both treat "no route to measure" as "no zoom constraint
+    to impose" deliberately, a different semantic from a marker position
+    that has nothing meaningful to be — changing it would mean rewriting an
+    intentional, currently-passing test outside this pass's mandate.
+    Skipped, not filed.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **Scoping a hardening pass's self-review to the whole diff since the
+    last hardening pass, rather than only this pass's own edits (iteration
+    25's narrower choice), surfaces real bugs — but also stale findings
+    that read as current until you check.** Two of this iteration's five
+    self-review findings described exactly the code this same iteration's
+    own `/simplify` fixes had already rewritten by the time self-review ran
+    — the review target (`2215ec3..4768126`) doesn't include this
+    iteration's own commits on top of it. Worth re-reading the actual
+    current file state (not just trusting a finding's line-number citation
+    against an old diff) before deciding whether something found this way
+    is still real.
+  - **A hardening pass's own self-review can find genuine correctness bugs
+    that are simply out of scope for hardening** — `docs/LOOP.md` §6's
+    checklist is deliberately narrow (evidence, dead code, simplification,
+    coverage, `any`/TODO, deps/ADRs), and a rendering bug in already-shipped
+    code is none of those, however real and however much it undermines the
+    very feature (`M1-17`'s pinch-to-zoom) a recent item just built. Filing
+    it as a scoped roadmap item (matching the `M0-09`..`M0-13` precedent for
+    code-review-found bugs) keeps the hardening pass's own diff auditable as
+    "simplification only" while still not letting a real finding evaporate.
+  - **`get_job_logs` can return a real `logs_url` (not an immediate error)
+    for a job that never actually ran, and the run's own top-level
+    `conclusion` can read `"failure"` for the same never-scheduled shape**
+    — a fifth distinct tool-level presentation of `Q-003`'s signal, on top
+    of the four earlier iterations already catalogued. The reliable tell
+    stays the same across all of them: a 2-4 second `created_at`→
+    `completed_at` span with no `runner_id`/`runner_name`, and a 404 on the
+    actual log *content* (via `return_content: true`) regardless of what
+    the `logs_url` field or the run's `conclusion` claim.
+- **Follow-ups filed:** `M1-18` (marker/route-stroke scaling with pinch-zoom)
+  and `M1-19` (pan offset not reconciled on viewport/route change), both
+  depending on `M1-17` (done) and immediately available. Both are ranked
+  ahead of `M1-07` in `ROADMAP.md` on the reasoning that a rendering bug in
+  the screen `M1-06` itself calls "the entire marketing budget" outweighs
+  moving on to new feature work first — the next iteration should expect to
+  pick up `M1-18` rather than `M1-07`.

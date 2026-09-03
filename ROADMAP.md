@@ -1119,6 +1119,86 @@ the new `maxZoom` prop), `apps/mobile/app/_dev/[story].tsx` (the
 
 ---
 
+### [ ] M1-18 — The marker and route line must not scale with pinch-zoom
+
+**Status:** todo · **Size:** S · **Depends on:** M1-17
+**Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
+
+**Why:** `FlightMap`'s `<G transform="...scale(displayZoom)...">` wraps both
+the route `<Polyline>`s and the bird `<Circle>` marker, and neither
+compensates for the enclosing scale — `MARKER_RADIUS` and the polylines'
+`strokeWidth` are fixed pixel constants that get multiplied by `displayZoom`
+along with everything else inside that group. `maxZoomForMinVisibleKm` can
+legitimately return a large factor for a long route on a small viewport
+(confirmed by running the actual formula for a LAX→NYC route on a
+393×700-ish phone viewport: ≈190) — at anywhere near that zoom the marker
+renders at hundreds of pixels' radius and the route line hundreds of pixels
+wide, a solid-colour blob covering the whole screen well before the 25 km
+floor (`PRODUCT.md` §9) is even reached. `M1-06`'s own "Why" calls this
+screen "the screenshot people send their friends" — this bug makes pinching
+in on it, the exact gesture `M1-17` built, break the screen it was built for.
+
+**Do:**
+- Give the route `<Polyline>`s a non-scaling stroke (`react-native-svg`
+  supports SVG's `vectorEffect="non-scaling-stroke"`) so `strokeWidth` stays
+  a constant on-screen size regardless of the group's `scale(...)`.
+- Keep the marker's on-screen radius constant across zoom levels — either an
+  inverse-scaled `r` (`MARKER_RADIUS / displayZoom`) or by projecting the
+  marker outside the scaled `<G>` entirely and applying the zoom/pan
+  transform to its center coordinates instead of to the shape.
+
+**Do NOT:**
+- Do not change `maxZoomForMinVisibleKm` or the 25 km floor itself — this is
+  a rendering-only fix, not a change to how far the user may zoom.
+
+**Acceptance criteria:**
+- [ ] at the route's own `maxZoom`, the rendered marker's on-screen radius
+  stays within a small, fixed factor of its unzoomed radius
+- [ ] at the route's own `maxZoom`, the rendered route line's on-screen
+  width stays within a small, fixed factor of its unzoomed width
+- [ ] existing `[M1-13]`/`[M1-14]`/`[M1-16]`/`[M1-17]` `FlightMap`/
+  `FlightScreen` tests still pass unchanged
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`
+
+---
+
+### [ ] M1-19 — Reconcile the chart's pan offset when the viewport or route changes
+
+**Status:** todo · **Size:** S · **Depends on:** M1-17
+**Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
+
+**Why:** `FlightMap`'s `displayZoom` re-derives from the live `zoom`/`maxZoom`
+every render specifically so a `maxZoom` that shrinks between renders (a new,
+shorter flight; a rotated device) re-clamps immediately with no new gesture
+required — `M1-17`'s own fix for exactly this class of staleness. `pan` has
+no equivalent: it is a raw pixel offset set once per gesture and never
+reconciled against a changed `segments`/`viewport`. A device rotation after
+the user has panned changes `viewport.width`/`height`, which changes
+`FlightScreen`'s `computeFit`-derived scale/origin for the same route, but
+`FlightMap` keeps applying the old `pan.x`/`pan.y` on top of the newly-fit
+coordinates — the route or marker can end up shifted off-screen or oddly
+framed with no gesture having caused it.
+
+**Do:** reset (or otherwise reconcile) `pan` — and, if the same gap applies,
+`zoom` — whenever `segments`/`viewport` change to a genuinely different
+route or view, so the resting view after such a change is always the correct
+fit-to-bounds framing rather than the previous gesture's stale offset.
+
+**Do NOT:**
+- Do not change how `pan`/`zoom` behave *during* a gesture — this is only
+  about what happens when the inputs change with no gesture in progress.
+
+**Acceptance criteria:**
+- [ ] a viewport change (simulating a device rotation) after a pan gesture
+  leaves the route framed within the new viewport's bounds, not shifted off
+  it
+- [ ] existing `[M1-17]` pinch/pan tests still pass unchanged
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`
+
+---
+
 ### [ ] M1-07 — Compose and release
 
 **Status:** todo · **Size:** M · **Depends on:** M1-02, M1-03
