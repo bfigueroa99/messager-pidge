@@ -45,10 +45,15 @@ function unwrapLongitudes(segments: readonly (readonly LatLng[])[]): number[][] 
 
 /**
  * The scale/origin derivation `projectSegments` fits a route to, shared with
- * `projectPoint` so a marker's own position can never drift from the route's
- * fit — the two functions call this once, never re-derive it independently.
+ * `projectPoint` and `maxZoomForMinVisibleKm` so a marker's position and the
+ * pinch-zoom ceiling can never drift from the route's own fit — every
+ * consumer calls `computeFit` once and works from the same result. Exported
+ * so a caller re-deriving several of these per render (`FlightScreen`, for
+ * instance) can compute the fit itself exactly once and pass it to the
+ * `*WithFit` variants below, instead of paying for `computeFit`'s O(route
+ * points) work three times over for identical inputs.
  */
-interface Fit {
+export interface Fit {
   readonly scale: number;
   readonly originX: number;
   readonly originY: number;
@@ -59,11 +64,15 @@ interface Fit {
   readonly unwrappedLons: readonly (readonly number[])[];
 }
 
-function computeFit(
+export function computeFit(
   segments: readonly (readonly LatLng[])[],
   viewport: Viewport,
   paddingRatio: number,
 ): Fit {
+  if (segments.length === 0) {
+    throw new Error('computeFit: segments must be non-empty — nothing to fit a scale/origin to');
+  }
+
   const unwrappedLons = unwrapLongitudes(segments);
   const allLats = segments.flatMap((segment) => segment.map((point) => point.lat));
   const allLons = unwrappedLons.flat();
@@ -117,6 +126,29 @@ function unwrapLonToFit(lon: number, fit: Pick<Fit, 'minLon' | 'maxLon'>): numbe
   return best;
 }
 
+/** The one formula both `projectSegments`/`projectPoint` and their `*WithFit`
+ * variants place a geographic point at inside an already-computed `fit` —
+ * factored out so there is exactly one place that formula is written. */
+function toScreenPoint(fit: Fit, lon: number, lat: number): ProjectedPoint {
+  return {
+    x: fit.originX + (lon - fit.minLon) * fit.scale,
+    y: fit.originY + (fit.maxLat - lat) * fit.scale,
+  };
+}
+
+/**
+ * `projectSegments`'s own work, given a `Fit` the caller already computed
+ * (via `computeFit`) instead of deriving one from `segments`/`viewport`/
+ * `paddingRatio` again. Use this directly when projecting more than one
+ * thing (segments, a marker point, a zoom ceiling) against the same route in
+ * the same render — see `Fit`'s own docstring.
+ */
+export function projectSegmentsWithFit(segments: readonly (readonly LatLng[])[], fit: Fit): ProjectedPoint[][] {
+  return segments.map((segment, segmentIndex) =>
+    segment.map((point, pointIndex) => toScreenPoint(fit, fit.unwrappedLons[segmentIndex]![pointIndex]!, point.lat)),
+  );
+}
+
 /**
  * Projects `arcSegments()`'s antimeridian-split output into screen space,
  * fit to `viewport` with `paddingRatio` of margin reserved on every side
@@ -132,14 +164,15 @@ export function projectSegments(
 ): ProjectedPoint[][] {
   if (segments.length === 0) return [];
 
-  const fit = computeFit(segments, viewport, paddingRatio);
+  return projectSegmentsWithFit(segments, computeFit(segments, viewport, paddingRatio));
+}
 
-  return segments.map((segment, segmentIndex) =>
-    segment.map((point, pointIndex) => ({
-      x: fit.originX + (fit.unwrappedLons[segmentIndex]![pointIndex]! - fit.minLon) * fit.scale,
-      y: fit.originY + (fit.maxLat - point.lat) * fit.scale,
-    })),
-  );
+/**
+ * `projectPoint`'s own work, given a `Fit` the caller already computed —
+ * see `projectSegmentsWithFit`'s docstring for why this variant exists.
+ */
+export function projectPointWithFit(point: LatLng, fit: Fit): ProjectedPoint {
+  return toScreenPoint(fit, unwrapLonToFit(point.lon, fit), point.lat);
 }
 
 /**
@@ -166,13 +199,40 @@ export function projectPoint(
     throw new Error('projectPoint: segments must be non-empty — nothing to fit the point against');
   }
 
-  const fit = computeFit(segments, viewport, paddingRatio);
-  const lon = unwrapLonToFit(point.lon, fit);
+  return projectPointWithFit(point, computeFit(segments, viewport, paddingRatio));
+}
 
-  return {
-    x: fit.originX + (lon - fit.minLon) * fit.scale,
-    y: fit.originY + (fit.maxLat - point.lat) * fit.scale,
-  };
+/**
+ * `M1-12`'s own fit-to-bounds view — the resting zoom before any pinch
+ * gesture, and the floor `maxZoomForMinVisibleKm` never returns less than.
+ * Exported so `FlightMap`'s own "never zoom below this" constant is one
+ * shared fact rather than two independently-declared `1` literals.
+ */
+export const REST_ZOOM = 1;
+
+/**
+ * `maxZoomForMinVisibleKm`'s own work, given a `Fit` the caller already
+ * computed — see `projectSegmentsWithFit`'s docstring for why this variant
+ * exists. Unlike the wrapper below, this never needs an empty-`segments`
+ * guard: a `Fit` cannot exist without having been computed from a non-empty
+ * route in the first place.
+ */
+export function maxZoomForMinVisibleKmWithFit(fit: Fit, viewport: Viewport, minVisibleKm: number): number {
+  const centerLat = (fit.minLat + fit.maxLat) / 2;
+  const centerLon = (fit.minLon + fit.maxLon) / 2;
+  const lonWindowDeg = viewport.width / fit.scale;
+  const latWindowDeg = viewport.height / fit.scale;
+
+  const widthKm = haversineKm(
+    { lat: centerLat, lon: centerLon - lonWindowDeg / 2 },
+    { lat: centerLat, lon: centerLon + lonWindowDeg / 2 },
+  );
+  const heightKm = haversineKm(
+    { lat: centerLat - latWindowDeg / 2, lon: centerLon },
+    { lat: centerLat + latWindowDeg / 2, lon: centerLon },
+  );
+
+  return clamp(Math.min(widthKm, heightKm) / minVisibleKm, REST_ZOOM, Infinity);
 }
 
 /**
@@ -193,9 +253,9 @@ export function projectPoint(
  * this measures both axes at the fit's own center latitude and returns
  * whichever is smaller.
  *
- * Never returns less than 1: `M1-12`'s own fit-to-bounds view is the resting
- * zoom, and this only bounds zooming *in* past it — it never forces a route
- * that is already short of `minVisibleKm` at rest to zoom out further.
+ * Never returns less than `REST_ZOOM`: this only bounds zooming *in* past
+ * it, and never forces a route that is already short of `minVisibleKm` at
+ * rest to zoom out further.
  */
 export function maxZoomForMinVisibleKm(
   segments: readonly (readonly LatLng[])[],
@@ -205,22 +265,7 @@ export function maxZoomForMinVisibleKm(
 ): number {
   if (segments.length === 0) return Infinity;
 
-  const fit = computeFit(segments, viewport, paddingRatio);
-  const centerLat = (fit.minLat + fit.maxLat) / 2;
-  const centerLon = (fit.minLon + fit.maxLon) / 2;
-  const lonWindowDeg = viewport.width / fit.scale;
-  const latWindowDeg = viewport.height / fit.scale;
-
-  const widthKm = haversineKm(
-    { lat: centerLat, lon: centerLon - lonWindowDeg / 2 },
-    { lat: centerLat, lon: centerLon + lonWindowDeg / 2 },
-  );
-  const heightKm = haversineKm(
-    { lat: centerLat - latWindowDeg / 2, lon: centerLon },
-    { lat: centerLat + latWindowDeg / 2, lon: centerLon },
-  );
-
-  return Math.max(1, Math.min(widthKm, heightKm) / minVisibleKm);
+  return maxZoomForMinVisibleKmWithFit(computeFit(segments, viewport, paddingRatio), viewport, minVisibleKm);
 }
 
 /** `projectSegments()`'s output, partitioned at a point along the route. */
@@ -241,13 +286,25 @@ function allRemaining(segments: readonly (readonly ProjectedPoint[])[]): Progres
   return { flown: segments.map(() => []), remaining: segments };
 }
 
-function distance(a: ProjectedPoint, b: ProjectedPoint): number {
+/**
+ * Euclidean distance between two screen-space points. Exported so any other
+ * screen-space geometry — `FlightMap`'s pinch-gesture distance between two
+ * touches, for instance — reuses this instead of a second, independently
+ * written `Math.hypot` call; a component computing this itself would be the
+ * kind of math `CLAUDE.md`'s layering rule reserves for this package.
+ */
+export function screenDistance(a: ProjectedPoint, b: ProjectedPoint): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+/** The midpoint between two screen-space points. */
+export function screenMidpoint(a: ProjectedPoint, b: ProjectedPoint): ProjectedPoint {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
 function segmentLength(segment: readonly ProjectedPoint[]): number {
   let length = 0;
-  for (let i = 1; i < segment.length; i++) length += distance(segment[i - 1]!, segment[i]!);
+  for (let i = 1; i < segment.length; i++) length += screenDistance(segment[i - 1]!, segment[i]!);
   return length;
 }
 
@@ -268,7 +325,7 @@ function splitSegment(
   for (let i = 1; i < segment.length; i++) {
     const prev = segment[i - 1]!;
     const curr = segment[i]!;
-    const stepLength = distance(prev, curr);
+    const stepLength = screenDistance(prev, curr);
     if (cumulative + stepLength >= targetLength) {
       const t = stepLength === 0 ? 0 : (targetLength - cumulative) / stepLength;
       const splitPoint: ProjectedPoint = { x: prev.x + (curr.x - prev.x) * t, y: prev.y + (curr.y - prev.y) * t };

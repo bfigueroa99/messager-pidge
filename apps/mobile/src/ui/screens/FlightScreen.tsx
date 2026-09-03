@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
   arcSegments,
+  computeFit,
   flightStateAt,
-  maxZoomForMinVisibleKm,
-  projectPoint,
-  projectSegments,
+  maxZoomForMinVisibleKmWithFit,
+  projectPointWithFit,
+  projectSegmentsWithFit,
   type PublicFlight,
   type Viewport,
 } from '@pidge/flight-sim';
@@ -115,14 +116,19 @@ export function FlightScreen({
     () => arcSegments(flight.origin, flight.destination),
     [flight.origin.lat, flight.origin.lon, flight.destination.lat, flight.destination.lon],
   );
-  const projectedSegments = useMemo(
-    () => projectSegments(rawSegments, viewport, PADDING_RATIO),
+  // The one scale/origin derivation `projectedSegments`, `markerPoint` and
+  // `maxZoom` below all fit against — computed once per route/viewport
+  // rather than three times (once per consumer) for the same inputs, which
+  // matters once the marker's own re-render happens up to 60x/sec.
+  const fit = useMemo(
+    () => computeFit(rawSegments, viewport, PADDING_RATIO),
     [rawSegments, viewport.width, viewport.height],
   );
-  const markerPoint = projectPoint(state.position, rawSegments, viewport, PADDING_RATIO);
+  const projectedSegments = useMemo(() => projectSegmentsWithFit(rawSegments, fit), [rawSegments, fit]);
+  const markerPoint = projectPointWithFit(state.position, fit);
   const maxZoom = useMemo(
-    () => maxZoomForMinVisibleKm(rawSegments, viewport, PADDING_RATIO, MIN_VISIBLE_KM),
-    [rawSegments, viewport.width, viewport.height],
+    () => maxZoomForMinVisibleKmWithFit(fit, viewport, MIN_VISIBLE_KM),
+    [fit, viewport.width, viewport.height],
   );
 
   return (

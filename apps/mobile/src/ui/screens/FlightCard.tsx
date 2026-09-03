@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { flightStateAt, formatDistance, formatEta, type PublicFlight } from '@pidge/flight-sim';
 
@@ -25,8 +25,17 @@ export interface FlightCardProps {
  * it takes props and computes, it never fetches. Ticks once a second via
  * `setInterval` rather than every frame, so the countdown reads as a clock,
  * not an animation.
+ *
+ * Wrapped in `memo`: `M1-16`'s `FlightScreen` re-renders itself up to 60
+ * times a second to drive the chart's marker, and without this, mounting
+ * this card as a child re-runs its own `flightStateAt`/`formatEta`/
+ * `formatDistance` work on every one of those frames too, even though its
+ * props (`flight`, `originName`, `destinationName`, `unit`, `now`) stay
+ * referentially stable across `FlightScreen`'s own re-renders — defeating
+ * this component's whole reason for ticking on its own 1 Hz timer instead
+ * of a frame loop 59 times out of 60.
  */
-export function FlightCard({ flight, originName, destinationName, unit = 'imperial', now }: FlightCardProps) {
+function FlightCardImpl({ flight, originName, destinationName, unit = 'imperial', now }: FlightCardProps) {
   const [nowMs, setNowMs] = useState(() => now());
 
   // The interval is created once and never torn down for the life of the
@@ -54,6 +63,8 @@ export function FlightCard({ flight, originName, destinationName, unit = 'imperi
     </View>
   );
 }
+
+export const FlightCard = memo(FlightCardImpl);
 
 const styles = StyleSheet.create({
   card: {

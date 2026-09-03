@@ -2,7 +2,16 @@ import { arcSegments, haversineKm, interpolate } from './geo';
 import { LAX, LONDON, NYC, SYDNEY, TOKYO } from './__fixtures__/cities';
 import { planFlight } from './plan';
 import { flightStateAt } from './state';
-import { maxZoomForMinVisibleKm, projectPoint, projectSegments, splitAtProgress, type ProjectedPoint } from './project';
+import {
+  computeFit,
+  maxZoomForMinVisibleKm,
+  projectPoint,
+  projectSegments,
+  screenDistance,
+  screenMidpoint,
+  splitAtProgress,
+  type ProjectedPoint,
+} from './project';
 import type { LatLng } from './types';
 
 const VIEWPORT = { width: 400, height: 800 };
@@ -205,6 +214,15 @@ describe('projectPoint', () => {
     expect(() => projectPoint(LAX, [], VIEWPORT, PADDING_RATIO)).toThrow();
   });
 
+  // `computeFit` (exported so a caller projecting several things against the
+  // same route, e.g. `FlightScreen`, only pays for the fit derivation once
+  // per render) carries this same guard itself — not just `projectPoint`'s
+  // own wrapper around it — since a caller reaching it directly bypasses
+  // `projectPoint`'s check entirely.
+  it('[M1-15] computeFit itself throws on an empty segments array, not only projectPoint\'s own wrapper around it', () => {
+    expect(() => computeFit([], VIEWPORT, PADDING_RATIO)).toThrow();
+  });
+
   it('[M1-15] projects a point crossing the antimeridian into the same fit as the route without exploding off-screen', () => {
     const tokyoLaxSegments = arcSegments(TOKYO, LAX);
     const midpoint = interpolate(TOKYO, LAX, 0.5);
@@ -288,5 +306,23 @@ describe('maxZoomForMinVisibleKm', () => {
 
   it('[M1-17] returns Infinity for an empty segments array rather than dividing by a zero-size fit', () => {
     expect(maxZoomForMinVisibleKm([], VIEWPORT, PADDING_RATIO, 25)).toBe(Infinity);
+  });
+});
+
+// `FlightMap`'s pinch-gesture math (the distance between two touches, and
+// the point a pan is measured from) is built entirely on these two —
+// exported so that screen-space geometry lives here, per `CLAUDE.md`'s
+// layering rule, rather than being reimplemented inline in a component.
+describe('screenDistance and screenMidpoint', () => {
+  it('[M1-17] screenDistance measures the straight-line pixel distance between two points', () => {
+    expect(screenDistance({ x: 0, y: 0 }, { x: 3, y: 4 })).toBe(5);
+  });
+
+  it('[M1-17] screenDistance is zero for coincident points', () => {
+    expect(screenDistance({ x: 12, y: -7 }, { x: 12, y: -7 })).toBe(0);
+  });
+
+  it('[M1-17] screenMidpoint sits exactly halfway between two points', () => {
+    expect(screenMidpoint({ x: 10, y: 20 }, { x: 30, y: 0 })).toEqual({ x: 20, y: 10 });
   });
 });

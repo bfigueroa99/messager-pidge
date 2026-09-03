@@ -1,15 +1,26 @@
 import { useRef, useState } from 'react';
 import { PanResponder, StyleSheet, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Circle, G, Polyline, Rect } from 'react-native-svg';
-import { clamp, splitAtProgress, type ProjectedPoint, type Viewport } from '@pidge/flight-sim';
+import {
+  clamp,
+  REST_ZOOM,
+  screenDistance,
+  screenMidpoint,
+  splitAtProgress,
+  type ProjectedPoint,
+  type Viewport,
+} from '@pidge/flight-sim';
 
 import { COLORS } from '../theme/tokens';
 
 const REMAINING_DASH_PATTERN = '6,6';
 const MARKER_RADIUS = 5;
 /** The resting, fit-to-bounds view `M1-12` already produces. Pinching in can
- * only zoom past this, never below it (`M1-17`'s own "Do NOT" line). */
-const MIN_ZOOM = 1;
+ * only zoom past this, never below it (`M1-17`'s own "Do NOT" line) — the
+ * same fact `maxZoomForMinVisibleKm`'s own floor is built from, so both
+ * sides read it off `@pidge/flight-sim`'s one `REST_ZOOM` rather than each
+ * declaring their own `1` literal. */
+const MIN_ZOOM = REST_ZOOM;
 
 /** Below this, two touches are close enough together that dividing by their
  * distance would blow up to `Infinity`/`NaN` — not a real pinch to measure a
@@ -18,10 +29,12 @@ const MIN_PINCH_DISTANCE = 1;
 
 /** Euclidean distance between the first two active touches — undefined for
  * anything other than a two-finger gesture, which is the only case a caller
- * of this reads it for. */
+ * of this reads it for. The actual distance math is `@pidge/flight-sim`'s
+ * `screenDistance`, shared with the chart's own polyline-length math — this
+ * only extracts the two touches' `{x, y}` from the RN event shape. */
 function pinchDistance(touches: GestureResponderEvent['nativeEvent']['touches']): number {
   const [a, b] = touches;
-  return Math.hypot(b!.pageX - a!.pageX, b!.pageY - a!.pageY);
+  return screenDistance({ x: a!.pageX, y: a!.pageY }, { x: b!.pageX, y: b!.pageY });
 }
 
 /** The point a pan delta is measured from: a single touch's own position, or
@@ -29,10 +42,10 @@ function pinchDistance(touches: GestureResponderEvent['nativeEvent']['touches'])
  * the same notion of "the point" for one and two fingers means panning
  * never jumps when a pinch gesture picks up or drops a finger mid-gesture —
  * only the touch count driving `gestureStartRef`'s reset does that work. */
-function gesturePoint(touches: GestureResponderEvent['nativeEvent']['touches']): { x: number; y: number } {
+function gesturePoint(touches: GestureResponderEvent['nativeEvent']['touches']): ProjectedPoint {
   if (touches.length >= 2) {
     const [a, b] = touches;
-    return { x: (a!.pageX + b!.pageX) / 2, y: (a!.pageY + b!.pageY) / 2 };
+    return screenMidpoint({ x: a!.pageX, y: a!.pageY }, { x: b!.pageX, y: b!.pageY });
   }
   const [a] = touches;
   return { x: a!.pageX, y: a!.pageY };
@@ -131,13 +144,13 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
   // gesture began — the same care `FlightScreen`'s own `now` ref takes.
   // `zoomRef` tracks `displayZoom`, not the raw `zoom` state, so a gesture
   // that starts right after `maxZoom` shrank re-bases from what is actually
-  // on screen rather than from a stale, no-longer-valid value.
+  // on screen rather than from a stale, no-longer-valid value. `maxZoom`
+  // itself needs no ref: nothing below reads it except `displayZoom`, which
+  // already re-derives from the live prop every render.
   const zoomRef = useRef(displayZoom);
   zoomRef.current = displayZoom;
   const panRef = useRef(pan);
   panRef.current = pan;
-  const maxZoomRef = useRef(maxZoom);
-  maxZoomRef.current = maxZoom;
 
   // A snapshot of where the gesture currently in progress started, reset
   // whenever the number of active touches changes — so lifting or adding a
@@ -145,30 +158,37 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
   const gestureStartRef = useRef<{
     touchCount: number;
     distance: number;
-    point: { x: number; y: number };
+    point: ProjectedPoint;
     zoom: number;
     pan: { x: number; y: number };
   } | null>(null);
-
-  function startGesture(evt: GestureResponderEvent) {
-    const touches = evt.nativeEvent.touches;
-    gestureStartRef.current = {
-      touchCount: touches.length,
-      distance: touches.length >= 2 ? pinchDistance(touches) : 0,
-      point: gesturePoint(touches),
-      zoom: zoomRef.current,
-      pan: panRef.current,
-    };
-  }
 
   // Lazily initialized: `PanResponder.create` builds a full handler object
   // graph, and a plain `useRef(PanResponder.create(...))` would still
   // evaluate that argument expression — and throw its result away — on
   // every render, not just the first. `FlightScreen` re-renders this
   // component on every animation frame, so that would mean rebuilding it up
-  // to 60 times a second for nothing.
+  // to 60 times a second for nothing. `startGesture` lives inside this same
+  // guard for the same reason: nothing outside the handlers below ever
+  // calls it, so building a fresh closure for it on every render would be
+  // just as wasted.
   const panResponderRef = useRef<ReturnType<typeof PanResponder.create> | null>(null);
   if (panResponderRef.current === null) {
+    function startGesture(evt: GestureResponderEvent) {
+      const touches = evt.nativeEvent.touches;
+      gestureStartRef.current = {
+        touchCount: touches.length,
+        distance: touches.length >= 2 ? pinchDistance(touches) : 0,
+        point: gesturePoint(touches),
+        zoom: zoomRef.current,
+        pan: panRef.current,
+      };
+    }
+
+    const endGesture = () => {
+      gestureStartRef.current = null;
+    };
+
     panResponderRef.current = PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
@@ -191,18 +211,18 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
             // once the fingers have actually spread apart.
             gestureStartRef.current = { ...start, distance: currentDistance };
           } else {
-            const factor = currentDistance / start.distance;
-            setZoom(clamp(start.zoom * factor, MIN_ZOOM, maxZoomRef.current));
+            // No clamp here: `displayZoom` (above) re-clamps this same
+            // `zoom` state against the live `maxZoom` prop on every render
+            // regardless, including the one this `setZoom` triggers — a
+            // second clamp against a ref-mirrored `maxZoom` would only ever
+            // agree with it, never override it.
+            setZoom(start.zoom * (currentDistance / start.distance));
           }
         }
         setPan({ x: start.pan.x + (point.x - start.point.x), y: start.pan.y + (point.y - start.point.y) });
       },
-      onPanResponderRelease: () => {
-        gestureStartRef.current = null;
-      },
-      onPanResponderTerminate: () => {
-        gestureStartRef.current = null;
-      },
+      onPanResponderRelease: endGesture,
+      onPanResponderTerminate: endGesture,
     });
   }
   const panResponder = panResponderRef.current;
