@@ -1121,7 +1121,7 @@ the new `maxZoom` prop), `apps/mobile/app/_dev/[story].tsx` (the
 
 ### [ ] M1-18 — The marker and route line must not scale with pinch-zoom
 
-**Status:** todo · **Size:** S · **Depends on:** M1-17
+**Status:** in-progress · **Size:** S · **Depends on:** M1-17
 **Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
 
 **Why:** `FlightMap`'s `<G transform="...scale(displayZoom)...">` wraps both
