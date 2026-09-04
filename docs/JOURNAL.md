@@ -3249,3 +3249,96 @@ knowledge survives a context reset.
   the screen `M1-06` itself calls "the entire marketing budget" outweighs
   moving on to new feature work first — the next iteration should expect to
   pick up `M1-18` rather than `M1-07`.
+
+## Iteration 31 — 2026-09-04 — AUDIT
+
+- **Outcome:** done
+- **CI:** the tip's own most recent run (`b2e5590`, job `100657152810`,
+  run `33758045491`) completed in 3 seconds with no `runner_id`/`runner_name`
+  on the job object, and `get_job_logs` 404'd on the actual log content — the
+  same never-scheduled signature `Q-003` documents, again. Not this
+  iteration's item.
+- **Selection:** `iteration(31) - last_hardening_iteration(30) = 1 < 5`, not
+  hardening. `iteration(31) - last_audit_iteration(21) = 10 >= 10` — the
+  audit override fires. AUDIT per `docs/LOOP.md` §7.
+- **Verify:** re-ran `pnpm run verify` after writing `docs/AUDIT.md` even
+  though no code changed, matching iteration 21's own practice — green
+  throughout, unchanged (209 tests, floor still 209; `gate:roadmap` ok, 26
+  done/8 pending, unchanged since no `ROADMAP.md` item was inserted).
+- **What landed:** re-derived `PRODUCT.md` §3's INV-1…INV-7 table
+  independently against the current tree (HEAD `2ea2bb5`) rather than
+  assuming iteration 21's table still held — every citation re-read
+  directly, not copied forward (delegated the read-only re-derivation to a
+  research subagent, then spot-checked several of its highest-risk citations
+  myself: `FlightCard.tsx`'s `flightStateAt` call site, `FlightMap.tsx`'s
+  `MARKER_RADIUS`/`strokeWidth`/`<G transform>` line numbers — all confirmed
+  accurate on direct read before trusting them into `docs/AUDIT.md`). All
+  seven still enforced and proved, including against everything shipped
+  since iteration 21: `M1-12`–`M1-17` (the chart, its renderer, the
+  flown/dashed split, the bird's true screen position, the flight screen
+  itself, and the pinch-to-zoom constraint) are now primary enforcement
+  surface for INV-3 (`FlightScreen.tsx`'s own `flightStateAt` call site, a
+  second one added since iteration 21), INV-6 (`project.ts`'s `projectPoint`,
+  built specifically so the marker cannot decouple from the pixel-length
+  route split — its own docstring says so, and `[M1-15]`/`[M1-16]` tests
+  prove no replay/drift) and INV-7 (`maxZoomForMinVisibleKm`'s 25 km floor as
+  a second, UI-layer enforcement of the database snap, docstring explicitly
+  ties it to `PRODUCT.md` §9). One citation drifted since iteration 21
+  without changing what it enforces: `FlightCard.tsx`'s `flightStateAt` call
+  site moved from line 45 to line 54 (iteration 30's `2f2768e` inserted an
+  8-line docstring above the component; no behavior change) — updated in
+  `docs/AUDIT.md` rather than left stale.
+  Flagged, not filed: INV-6's table entry carries a caveat for the two
+  already-open `M1-18`/`M1-19` items — both are real, pre-existing rendering/
+  gesture-state bugs (marker/route-stroke scaling under pinch-zoom; a stale
+  pan offset after a viewport change) that make INV-6 compliance hard to
+  *see* on a real device, but neither alters, caches, or replays the bird's
+  actual computed position, so INV-6 itself still holds and no new item was
+  needed — they were already correctly filed at iteration 30 and remain
+  `todo`.
+  Drift check re-ran the same non-goal grep (`streak`/`undo`/`unsend`/
+  `retry`/`fast[- ]?path`/`boost`/`priority send`/`gacha`/`breed`/`rarity`/
+  `leaderboard`) across `packages/`, `apps/`, `supabase/` — same two
+  incidental prose hits as iterations 11 and 21 (`geo.ts`'s antimeridian-
+  rendering "streak", `0005_schedule.sql`'s cron-doesn't-"retry"), plus
+  confirmed `eslint.config.mjs`'s "failed. Retry?" voice-guard comment
+  (flagged at iteration 21, root-level, outside this grep's scanned
+  directories) is unchanged and still documents banned copy rather than
+  implementing it. All currently-pending `ROADMAP.md` items (`M1-18`,
+  `M1-19`, `M1-07`, `M1-08`, `M1-09`, `M1-11`) still cite or clearly rule out
+  the non-goal nearest their own surface. A targeted third check — reading
+  `FlightMap.tsx`/`FlightScreen.tsx`/`project.ts` in full specifically for a
+  hidden fast path, an undo, or a decoupled/replayed animation in the new
+  pinch-zoom/pan code, since `PRODUCT.md` §8 names those as exactly what an
+  autonomous agent drifts toward — found none: `zoom`/`pan` never reach
+  `flightStateAt` or any duration calculation, there is no stored "previous"
+  position anywhere, and the marker's position is recomputed from
+  `flightStateAt` fresh every render with no tween of its own.
+  No GAP found this time (contrast iteration 11, which found and filed
+  `M0-15`) — `docs/AUDIT.md` overwritten with the iteration 31 table, no
+  `ROADMAP.md` item inserted.
+- **Surprises for the next agent:**
+  - **Delegating a large, read-only, citation-heavy audit re-derivation to a
+    subagent works well but is not a substitute for spot-checking the
+    highest-risk claims yourself before they go in a document the next
+    iteration will trust blind.** The subagent's report was accurate on every
+    line I independently re-checked (`FlightCard.tsx:54`, `FlightMap.tsx`'s
+    `MARKER_RADIUS`/`strokeWidth`/`<G transform>` lines), but I only
+    fully-verified 3 of its ~30 citations myself — the rest are trusted on
+    the strength of the subagent's read, which is the same trust-but-verify
+    tradeoff any delegation carries, just applied here to a document whose
+    whole purpose is "do not trust the previous iteration's citations
+    blindly." Worth remembering this is a compounding risk: iteration 41's
+    audit will re-derive against iteration 31's table the same way iteration
+    31 re-derived against iteration 21's — an unverified citation here
+    becomes a "confirmed unchanged since iteration 21" false confidence
+    there if nobody re-reads the actual file.
+  - **`M1-18`/`M1-19` sitting open across an entire audit cycle (filed at
+    iteration 30, still `todo` at iteration 31, the very next iteration)
+    is exactly what the audit is for catching, and it didn't need catching
+    here** — they were already correctly filed with their own scoped
+    acceptance criteria, ranked ahead of `M1-07` in `ROADMAP.md`. The
+    audit's job in this case was confirming the caveat is still accurate
+    (visual-only, not a model-level INV-6 violation) now that a full
+    iteration has passed without them being picked up — not re-discovering
+    them from scratch.
