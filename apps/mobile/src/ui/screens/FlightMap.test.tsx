@@ -38,6 +38,14 @@ function pointsAttrToPoints(pointsAttr: string): ProjectedPoint[] {
     });
 }
 
+function zoomOf(container: HTMLElement): number {
+  const group = container.querySelector('[data-testid="flight-map-zoom-group"]');
+  const transform = group?.getAttribute('transform') ?? '';
+  const match = /scale\(([\d.]+)\)/.exec(transform);
+  if (!match) throw new Error(`no scale(...) found in transform: "${transform}"`);
+  return Number(match[1]);
+}
+
 describe('FlightMap', () => {
   it('[M1-13] keeps a Tokyo to LA route\'s two segments visually separated, with no line connecting across the seam', () => {
     const segments = arcSegments(TOKYO, LAX);
@@ -129,14 +137,6 @@ describe('FlightMap', () => {
 });
 
 describe('FlightMap pinch-to-zoom', () => {
-  function zoomOf(container: HTMLElement): number {
-    const group = container.querySelector('[data-testid="flight-map-zoom-group"]');
-    const transform = group?.getAttribute('transform') ?? '';
-    const match = /scale\(([\d.]+)\)/.exec(transform);
-    if (!match) throw new Error(`no scale(...) found in transform: "${transform}"`);
-    return Number(match[1]);
-  }
-
   function renderMap(maxZoom: number) {
     const NYC = { lat: 40.7128, lon: -74.006 };
     const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
@@ -230,5 +230,114 @@ describe('FlightMap pinch-to-zoom', () => {
     expect(Number.isFinite(zoomOf(container))).toBe(true);
     expect(zoomOf(container)).toBeGreaterThanOrEqual(1);
     expect(zoomOf(container)).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('FlightMap marker and route line at high zoom', () => {
+  function pinchToMaxZoom(getByTestId: (id: string) => HTMLElement) {
+    const target = getByTestId('flight-map');
+    fireEvent.touchStart(target, touchEvent([touch(140, 100), touch(160, 100)]));
+    // Fingers move far enough apart to guarantee the clamp against maxZoom
+    // (not the raw pinch ratio) is what ends up on screen.
+    fireEvent.touchMove(target, touchEvent([touch(-8600, 100), touch(8800, 100)]));
+  }
+
+  it("[M1-18] at the route's own maxZoom, the marker's on-screen radius stays within a small, fixed factor of its unzoomed radius", () => {
+    const HIGH_MAX_ZOOM = 190; // representative of a real long-route/small-viewport maxZoom (see the item's own "Why")
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const { container, getByTestId } = render(
+      <FlightMap
+        segments={projected}
+        viewport={VIEWPORT}
+        progress={0.4}
+        maxZoom={HIGH_MAX_ZOOM}
+        markerPoint={{ x: 150, y: 100 }}
+      />,
+    );
+
+    const unzoomedRadius = Number(container.querySelector('circle')!.getAttribute('r'));
+
+    pinchToMaxZoom(getByTestId);
+    expect(zoomOf(container)).toBe(HIGH_MAX_ZOOM);
+
+    const zoomedRadius = Number(container.querySelector('circle')!.getAttribute('r'));
+    const onScreenRadius = zoomedRadius * zoomOf(container);
+
+    // Within 1% of the resting, unzoomed on-screen radius — not "hundreds of
+    // pixels" the way an uncompensated `r` multiplied by a 190x scale would be.
+    expect(onScreenRadius).toBeCloseTo(unzoomedRadius, 1);
+  });
+
+  it("[M1-18] at the route's own maxZoom, the route line's on-screen width stays within a small, fixed factor of its unzoomed width", () => {
+    const HIGH_MAX_ZOOM = 190;
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const { container, getByTestId } = render(
+      <FlightMap segments={projected} viewport={VIEWPORT} progress={1} maxZoom={HIGH_MAX_ZOOM} />,
+    );
+
+    // `vector-effect="non-scaling-stroke"` is what actually keeps the line's
+    // *rendered* width constant regardless of the enclosing `<G>`'s scale —
+    // an SVG-spec guarantee, not something jsdom itself computes pixels for.
+    container.querySelectorAll('polyline').forEach((polyline) => {
+      expect(polyline.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      expect(polyline.getAttribute('stroke-width')).toBe('2');
+    });
+
+    pinchToMaxZoom(getByTestId);
+    expect(zoomOf(container)).toBe(HIGH_MAX_ZOOM);
+
+    // The raw stroke-width attribute itself never changes with zoom — the
+    // non-scaling-stroke effect is what stops the enclosing scale() from
+    // blowing the visible width up along with it.
+    container.querySelectorAll('polyline').forEach((polyline) => {
+      expect(polyline.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      expect(polyline.getAttribute('stroke-width')).toBe('2');
+    });
+  });
+
+  it('[M1-18] the non-scaling-stroke/inverse-scaled-radius fix leaves M1-13/M1-14/M1-16/M1-17 behavior unchanged', () => {
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+
+    // M1-14: still exactly one solid and one dashed polyline at 40% elapsed.
+    const { container, getByTestId } = render(
+      <FlightMap
+        segments={projected}
+        viewport={VIEWPORT}
+        progress={0.4}
+        maxZoom={10}
+        markerPoint={{ x: 150, y: 100 }}
+      />,
+    );
+    const polylines = Array.from(container.querySelectorAll('polyline'));
+    expect(polylines.filter((p) => !p.getAttribute('stroke-dasharray')).length).toBeGreaterThan(0);
+    expect(polylines.filter((p) => p.getAttribute('stroke-dasharray')).length).toBeGreaterThan(0);
+
+    // M1-13: the raw `points` attribute still carries real, well-formed
+    // coordinates — the new `vectorEffect` prop changes how a browser
+    // renders the stroke, not the polyline's own geometry.
+    polylines.forEach((polyline) => {
+      const points = pointsAttrToPoints(polyline.getAttribute('points')!);
+      expect(points.length).toBeGreaterThanOrEqual(2);
+      points.forEach((point) => {
+        expect(Number.isFinite(point.x)).toBe(true);
+        expect(Number.isFinite(point.y)).toBe(true);
+      });
+    });
+
+    // M1-16/M1-17: at rest (no gesture) the marker sits exactly at its given
+    // point and the chart starts at zoom 1, both unaffected by this item.
+    expect(zoomOf(container)).toBe(1);
+    expect(container.querySelector('circle')!.getAttribute('cx')).toBe('150');
+    expect(container.querySelector('circle')!.getAttribute('cy')).toBe('100');
+
+    // M1-17: pinch-to-zoom itself — clamped to maxZoom — still works exactly
+    // as it did before this item.
+    const target = getByTestId('flight-map');
+    fireEvent.touchStart(target, touchEvent([touch(140, 100), touch(160, 100)]));
+    fireEvent.touchMove(target, touchEvent([touch(-860, 100), touch(1160, 100)]));
+    expect(zoomOf(container)).toBe(10);
   });
 });

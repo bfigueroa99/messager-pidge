@@ -83,7 +83,10 @@ function toPointsAttr(points: readonly ProjectedPoint[]): string {
   return points.map((point) => `${point.x},${point.y}`).join(' ');
 }
 
-/** One `<Polyline>` per segment with at least 2 points; degenerate segments render nothing. */
+/** One `<Polyline>` per segment with at least 2 points; degenerate segments render nothing.
+ * `vectorEffect="non-scaling-stroke"` (`[M1-18]`) keeps `strokeWidth` a constant on-screen
+ * size regardless of the enclosing `<G>`'s pinch-to-zoom `scale(...)` — without it, the
+ * line's visual width is multiplied by `displayZoom` along with the geometry it draws. */
 function renderPolylines(
   segmentsList: readonly (readonly ProjectedPoint[])[],
   keyPrefix: string,
@@ -99,6 +102,7 @@ function renderPolylines(
           stroke={COLORS.bird}
           strokeWidth={2}
           strokeDasharray={strokeDasharray}
+          vectorEffect="non-scaling-stroke"
         />
       ),
   );
@@ -241,11 +245,15 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
           {renderPolylines(flown, 'flown')}
           {renderPolylines(remaining, 'remaining', REMAINING_DASH_PATTERN)}
           {markerPoint && (
+            // Inverse-scaled (`[M1-18]`) so the marker's on-screen radius stays
+            // MARKER_RADIUS regardless of the enclosing <G>'s scale(displayZoom) —
+            // `vectorEffect` only compensates a shape's *stroke*, not a filled
+            // circle's own geometry, so the radius itself must counter the zoom.
             <Circle
               testID="bird-marker"
               cx={markerPoint.x}
               cy={markerPoint.y}
-              r={MARKER_RADIUS}
+              r={MARKER_RADIUS / displayZoom}
               fill={COLORS.bird}
             />
           )}

@@ -3342,3 +3342,93 @@ knowledge survives a context reset.
     (visual-only, not a model-level INV-6 violation) now that a full
     iteration has passed without them being picked up — not re-discovering
     them from scratch.
+
+## Iteration 32 — 2026-09-04 — M1-18
+
+- **Outcome:** done
+- **CI:** the tip's own most recent run before this iteration's push
+  (`4e65cc8`, job `100865423484`, run `33821657541`) had `runner_id: 0`,
+  `runner_name: ""` and a 404 on `get_job_logs`'s actual log content — the
+  same never-scheduled signature `Q-003` documents (this time with a
+  39-second `created_at`→`completed_at` span, longer than earlier
+  iterations' 2-4 seconds, which is why the empty runner fields and the
+  404 on real content — not the duration — are what settled it). Not this
+  iteration's item.
+- **Selection:** `iteration(32) - last_hardening_iteration(30) = 2 < 5`, not
+  hardening. `iteration(32) - last_audit_iteration(31) = 1 < 10`, not audit.
+  Topmost unblocked `todo` in `ROADMAP.md` is `M1-18` (depends on `M1-17`,
+  done) — matches iteration 30's/31's own note that `M1-18` was expected to
+  be picked up next, ranked ahead of `M1-07`. Size S, no split needed.
+- **Verify:** typecheck ok · lint ok · 212 tests ok (floor raised 209 → 212,
+  +3 new `[M1-18]` tests) · flight-sim coverage unchanged (99.07%/90.9%
+  aggregate, both above the 90%/85% gate — this item touched only
+  `apps/mobile`, not `packages/flight-sim`) · `gate:roadmap` ok (27 done, 7
+  pending) · `gate:tests` ok (floor raised to 212).
+- **What landed:** `FlightMap.tsx`'s route `<Polyline>`s now carry
+  `vectorEffect="non-scaling-stroke"`, confirmed by direct render (not
+  assumed) to produce the DOM attribute `vector-effect="non-scaling-stroke"`
+  on this repo's `react-native-svg` web target — an SVG-spec guarantee that
+  the browser keeps `strokeWidth` a constant on-screen size regardless of
+  the enclosing `<G>`'s `scale(displayZoom)`. The bird marker's `<Circle>`
+  now takes `r={MARKER_RADIUS / displayZoom}` (the simpler of the item's own
+  two suggested fixes) rather than a fixed `MARKER_RADIUS`, so the group's
+  scale multiplies it straight back to the constant on-screen radius the UI
+  wants at any zoom. Three new `[M1-18]` tests in `FlightMap.test.tsx`: one
+  pinches to a representative high `maxZoom` (190, the item's own cited
+  LAX→NYC-on-a-phone figure) and asserts the marker's *computed* on-screen
+  radius (raw `r` attribute × the zoom parsed from the group's `transform`)
+  lands within 1% of the unzoomed baseline; a second asserts the route
+  polylines carry `vector-effect="non-scaling-stroke"` with `stroke-width`
+  attribute unchanged at "2" before and after the same pinch — jsdom holds
+  attributes rather than rendering real SVG geometry, so this test proves
+  the *mechanism* is wired in rather than measuring a pixel width no test
+  runner here can actually observe; a third is a dedicated regression test
+  re-covering the item's own third acceptance criterion (existing
+  `M1-13`/`M1-14`/`M1-16`/`M1-17` behavior unchanged) — needed because
+  `gate:roadmap` counts only tests whose name carries `[M1-18]` against
+  ticked boxes, and "the pre-existing tests still pass" on its own, however
+  true, is not evidence a different item's own ID can be ticked against.
+  Verified the first two tests fail against the pre-fix code before landing
+  (marker radius computed as 950px at 190x zoom; `vector-effect` absent) and
+  pass against the fix, per `docs/LOOP.md` §3's "watch it fail, then make it
+  pass" instruction — not merely written to pass, then trusted. Self-review
+  (`/code-review --effort
+  high`) against the full diff found no further issues: `displayZoom` is
+  always clamped to `[REST_ZOOM, maxZoom]` before either new site reads it,
+  so no division-by-zero or negative-radius path exists at either end of
+  that range. No `supabase/`, auth, or RLS touched — no `/security-review`
+  per `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **`vectorEffect` is a real, working prop on this repo's pinned
+    `react-native-svg@~15.15.0` — confirmed by rendering a probe component
+    and reading the actual DOM (`vector-effect="non-scaling-stroke"`), not
+    assumed from the library's docs.** It passes straight through
+    `react-native-svg`'s web `prepare()` (an unlisted prop in that
+    function's own destructure, so it lands in `rest` and is spread onto
+    the real DOM node) to React DOM, which recognizes `vectorEffect` as a
+    known camelCase SVG attribute name and lowercases it to
+    `vector-effect` — the same path any other passthrough SVG prop
+    (`strokeDasharray`, etc.) already takes on this render target. Worth
+    knowing before assuming a prop needs a native module update to reach
+    the DOM: on the web target, anything not explicitly destructured out by
+    `prepare()` reaches the browser unchanged.
+  - **A rendering fix that changes *browser* behavior (an SVG-spec effect
+    like `vector-effect`) is not always something a jsdom-based Jest test
+    can directly measure — but the fix's own wiring still is.** The route
+    line's half of this item has no way to be proven by computing a pixel
+    width in this test suite (jsdom does not lay out or paint SVG), so the
+    regression test instead asserts the attribute that causes the browser
+    to do so is present, plus that the underlying `strokeWidth` prop itself
+    never changes with zoom (it never did, before or after this fix — the
+    bug was purely how the *browser* renders a constant width under an
+    ancestor's `scale()`). The marker's half has no such gap: `r` is a
+    plain numeric attribute, so that test computes and asserts an actual
+    on-screen size. Two acceptance criteria that read as parallel in
+    `ROADMAP.md` ended up needing genuinely different kinds of test
+    evidence for exactly this reason — worth checking, for any future
+    "on-screen size" criterion, whether the property in question is a
+    real number in the DOM or a rendering effect this container's tools
+    cannot actually paint and measure.
+- **Follow-ups filed:** none. `M1-19` (the pan-offset reconciliation bug,
+  filed alongside this item at iteration 30) remains `todo`, depends only
+  on `M1-17` (done), and is next in line ahead of `M1-07`.

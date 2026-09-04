@@ -1119,9 +1119,9 @@ the new `maxZoom` prop), `apps/mobile/app/_dev/[story].tsx` (the
 
 ---
 
-### [ ] M1-18 — The marker and route line must not scale with pinch-zoom
+### [x] M1-18 — The marker and route line must not scale with pinch-zoom
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-17
+**Status:** done · **Size:** S · **Depends on:** M1-17
 **Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
 
 **Why:** `FlightMap`'s `<G transform="...scale(displayZoom)...">` wraps both
@@ -1152,12 +1152,35 @@ in on it, the exact gesture `M1-17` built, break the screen it was built for.
   a rendering-only fix, not a change to how far the user may zoom.
 
 **Acceptance criteria:**
-- [ ] at the route's own `maxZoom`, the rendered marker's on-screen radius
+- [x] at the route's own `maxZoom`, the rendered marker's on-screen radius
   stays within a small, fixed factor of its unzoomed radius
-- [ ] at the route's own `maxZoom`, the rendered route line's on-screen
+- [x] at the route's own `maxZoom`, the rendered route line's on-screen
   width stays within a small, fixed factor of its unzoomed width
-- [ ] existing `[M1-13]`/`[M1-14]`/`[M1-16]`/`[M1-17]` `FlightMap`/
+- [x] existing `[M1-13]`/`[M1-14]`/`[M1-16]`/`[M1-17]` `FlightMap`/
   `FlightScreen` tests still pass unchanged
+
+**Resolution note:** the marker's `<Circle r={...}>` is inverse-scaled
+(`MARKER_RADIUS / displayZoom`) rather than projected outside the scaled
+`<G>` — the simpler of the two options the item's own "Do" line offered,
+and the group's `translate(pan) translate(center) scale(displayZoom)
+translate(-center)` transform already keeps the marker's *position*
+correct at any zoom, so only its radius needed compensating. The route
+`<Polyline>`s take `vectorEffect="non-scaling-stroke"`, confirmed (not
+assumed) to render as the DOM attribute `vector-effect="non-scaling-stroke"`
+on this repo's web target — an SVG-spec guarantee that the browser itself
+keeps `strokeWidth` a constant on-screen size regardless of an ancestor's
+`scale(...)`, which is why the new `[M1-18]` test for the route line
+asserts the attribute's presence (the mechanism) rather than a computed
+pixel width — jsdom holds attributes, it does not render or measure SVG
+geometry, so nothing in this test suite can observe the *effect* of
+`vector-effect` directly, only that the fix is wired in. The marker
+radius, by contrast, is plain arithmetic on a real attribute value, so
+that test does compute an actual "on-screen radius" (raw `r` × the
+`scale(...)` parsed from the group's `transform`) and asserts it lands
+within 1% of the unzoomed baseline. Verified against the pre-fix code
+before landing: both new tests fail as expected (marker radius reads
+950px at a 190x zoom instead of ~5px; `vector-effect` is absent), then
+pass once the fix is applied.
 
 **Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`
 
