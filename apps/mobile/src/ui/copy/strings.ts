@@ -34,7 +34,19 @@ export type Copy =
   | { key: 'loftPickerTitle' }
   | { key: 'loftPickerSearchLabel' }
   | { key: 'loftPickerNoResults' }
-  | { key: 'loftPickerPrivacyNote' };
+  | { key: 'loftPickerPrivacyNote' }
+  /** Compose screen (M1-07). In-fiction, unlike the loft picker above — this
+   * is the release itself, not an account/privacy boundary. */
+  | { key: 'composeTitle'; recipientName: string }
+  | { key: 'composeNotePlaceholder' }
+  | { key: 'composeReleaseLabel' }
+  | { key: 'composeKeepWritingLabel' }
+  /** The pre-release confirmation: states the previewed due time and that
+   * the bird cannot be called back. `dueIn` is `formatEta`'s own phrasing
+   * (e.g. "22h away"), not a second, independently-worded duration format. */
+  | { key: 'composeConfirm'; dueIn: string }
+  /** Shown for the ~1.2s release ceremony (`DURATIONS_MS.release`). */
+  | { key: 'composeReleasing' };
 
 export function t(copy: Copy): string {
   switch (copy.key) {
@@ -58,5 +70,17 @@ export function t(copy: Copy): string {
       return 'No matching cities.';
     case 'loftPickerPrivacyNote':
       return 'Only the city you select is stored, never your exact location. You can set this to any city, not necessarily where you live.';
+    case 'composeTitle':
+      return `To ${copy.recipientName}`;
+    case 'composeNotePlaceholder':
+      return 'Write your note.';
+    case 'composeReleaseLabel':
+      return 'Release';
+    case 'composeKeepWritingLabel':
+      return 'Keep writing';
+    case 'composeConfirm':
+      return `${copy.dueIn}. This bird cannot be called back once released.`;
+    case 'composeReleasing':
+      return 'Releasing.';
   }
 }

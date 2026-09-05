@@ -19,6 +19,12 @@ const SAMPLE_COPY: { [K in Copy['key']]: Extract<Copy, { key: K }> } = {
   loftPickerSearchLabel: { key: 'loftPickerSearchLabel' },
   loftPickerNoResults: { key: 'loftPickerNoResults' },
   loftPickerPrivacyNote: { key: 'loftPickerPrivacyNote' },
+  composeTitle: { key: 'composeTitle', recipientName: 'Ana' },
+  composeNotePlaceholder: { key: 'composeNotePlaceholder' },
+  composeReleaseLabel: { key: 'composeReleaseLabel' },
+  composeKeepWritingLabel: { key: 'composeKeepWritingLabel' },
+  composeConfirm: { key: 'composeConfirm', dueIn: '22h away' },
+  composeReleasing: { key: 'composeReleasing' },
 };
 
 /**
@@ -74,6 +80,12 @@ describe('the copy catalogue', () => {
         expect(lower).not.toContain(word);
       }
     }
+  });
+
+  it('[M1-07] the compose screen copy states the recipient, the previewed due time and that release cannot be undone', () => {
+    expect(t(SAMPLE_COPY.composeTitle)).toBe('To Ana');
+    expect(t(SAMPLE_COPY.composeConfirm)).toBe('22h away. This bird cannot be called back once released.');
+    expect(t(SAMPLE_COPY.composeReleasing)).toBe('Releasing.');
   });
 
   it('[M1-01] every string resolves through the typed accessor without a cast', () => {

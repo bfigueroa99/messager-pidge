@@ -3534,3 +3534,125 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. The next unblocked `todo` items in order are
   `M1-07` (compose and release) and `M1-08`/`M1-09`/`M1-11` (blocked or
   depending on `M1-07`/`M1-08`).
+
+## Iteration 34 — 2026-09-05 — M1-07
+
+- **CI:** `mcp__github__actions_list` was available this iteration. The
+  previous commit's `verify` run (`33933078812`/`33933076270`, both
+  `head_sha 837ae81`) again showed `Q-003`'s never-scheduled signature: a
+  `created_at`→`completed_at` span of 3 seconds and a 404 on
+  `get_job_logs`'s actual log content (confirmed directly — the `logs_url`
+  it hands back 404s on download). Not this iteration's item; `Q-003` is
+  already open and unchanged.
+- **Selection:** `iteration(34) - last_hardening_iteration(30) = 4 < 5`, not
+  hardening. `iteration(34) - last_audit_iteration(31) = 3 < 10`, not audit.
+  No AUDIT-gap items pending. Topmost unblocked `todo` in `ROADMAP.md` is
+  `M1-07` (depends on `M1-02`, `M1-03`, both done). Size M, no split needed.
+- **Implementation:** `ComposeScreen` (new) is a composing-note → pre-release
+  confirmation → releasing state machine (`phase: 'composing' | 'confirming'
+  | 'releasing'`), following `LoftPicker`'s own injected-`deps` pattern
+  (`M1-03`) rather than calling a real backend. The note field truncates to
+  280 chars in `onChangeText` itself (`text.slice(0, MAX_NOTE_LENGTH)`) so
+  the state, not just the native `maxLength` attribute, is the source of
+  truth for "a 281st character is impossible" — jsdom's `fireEvent.change`
+  bypasses a real browser's own `maxlength` truncation, so relying on the
+  attribute alone would have left the acceptance criterion untested by what
+  it claims to test. Tapping "Release" opens the confirmation (no call yet);
+  tapping the confirmation's own "Release" calls `startRelease`, which
+  checks-and-sets a `useRef` boolean *before* calling `deps.release` and
+  before the ~1.2s ceremony timer starts — a double-tap is refused
+  synchronously, not merely by the button disappearing once React
+  re-renders into the `releasing` phase. The ceremony itself is
+  `Promise.all([deps.release(note), ceremony])`, where `ceremony` is a bare
+  `setTimeout(DURATIONS_MS.release)` (that token already existed in
+  `tokens.ts`, commented "M1-07's release ceremony: a decision, not a
+  reflex" — clearly anticipated by whoever wrote `M1-01`) — so a failure
+  surfaces the moment `deps.release` rejects, without waiting out the
+  ceremony, while a success always takes at least 1.2s regardless of how
+  fast the network answers. On failure: `releasingRef` resets, `phase`
+  returns to `composing`, and the existing `offline` copy key renders — the
+  `note` state itself is never touched by any of this, so the text survives
+  untouched. The pre-release confirmation's due-time preview
+  (`previewDueIn`) is a real call into `@pidge/flight-sim`'s
+  `effectiveSpeedKmh`/`durationMs`/`formatEta` against the caller-supplied
+  `distanceKm` — the same physics the server applies at release, not a
+  second guess — memoized on `distanceKm` after self-review (below) flagged
+  it re-running on every keystroke. `strings.ts` gained six `compose*` copy
+  variants (title, placeholder, release/keep-writing labels, the
+  confirm/ceremony lines), reusing the existing `offline` key for the
+  network-failure case exactly as `LoftPicker` already does, and exhaustively
+  added to `strings.test.ts`'s `SAMPLE_COPY` map (the type would not compile
+  otherwise). No real Supabase client exists in the mobile app yet (Q-002/
+  `M1-11`, still blocked) and no conversation/contacts screen exists to
+  arrive at this one from, so `app/compose.tsx` wires an honest placeholder
+  exactly like `loft-picker.tsx`'s own `realLoftPickerDeps`: `realComposeDeps`
+  always rejects, and a placeholder recipient/distance (`Ana`, 3936 km — the
+  same LA-NYC numbers `flight-demo.tsx` already uses) stand in for a real
+  resolved recipient. "Optimistic navigation to the flight screen" is wired
+  as literally as the app currently allows — `onReleased` calls
+  `router.replace('/flight-demo')`, the only flight screen route that
+  exists — rather than invented against a per-flight-id route that does not
+  exist yet (that is realistically `M1-08`'s job, once Realtime data is
+  actually flowing).
+- **Verify:** typecheck ok · lint ok · 224 tests ok (floor raised 216 → 224,
+  +8 new `[M1-07]` tests, 2 of them in `strings.test.ts`) · flight-sim
+  coverage unchanged (99.07%/90.9% aggregate, both above the 90%/85% gate —
+  this item touched no `flight-sim` source at all, only consumed its
+  existing exports) · `gate:roadmap` ok (28 done/6 pending) · `gate:tests`
+  ok.
+- **Self-review (`/code-review --effort high`):** two real findings, both
+  fixed. (1) The "no recall/cancel/unsend/edit handler" static-scan test's
+  first version used a `\b`-bounded regex (`\b(?:recall|cancel|unsend|edit)\b`)
+  against whole declared identifier names — confirmed directly that this
+  regex returns `false` against `handleCancel`, `editNote`, `cancelRelease`,
+  and `recallBird`, so it could only ever catch a handler named exactly
+  `cancel`/`edit`/etc., not any realistic compound name a real recall/cancel
+  affordance would actually use. Fixed by dropping the word boundaries to a
+  plain substring match, and confirmed the existing declared names in all
+  three scanned files (`ComposeScreen.tsx`, `app/compose.tsx`,
+  `compose-deps.ts` — `canRelease` in particular, checked character-by-
+  character against `cancel`) contain none of the four forbidden substrings,
+  so the tightened test still passes for the right reason. (2)
+  `previewDueIn(distanceKm)` was called directly in the render body, re-running
+  `effectiveSpeedKmh`/`durationMs`/`formatEta` on every keystroke in the note
+  field even though `distanceKm` never changes for the life of the mounted
+  screen — fixed with `useMemo(() => previewDueIn(distanceKm), [distanceKm])`.
+  A third finding (the `deferred<T>()` test helper duplicated verbatim from
+  `LoftPicker.test.tsx`) was left as-is: real duplication, but extracting a
+  shared `apps/mobile` test-utils module is a small, independent cleanup
+  with no correctness stake, exactly `docs/LOOP.md` §6 hardening-iteration
+  territory rather than a `M1-07`-scoped fix — noted here rather than
+  actioned, per §4's "note deferred style findings in the journal."
+- **Surprises for the next agent:**
+  - **`effectiveSpeedKmh`'s long-haul fatigue term makes the LA-NYC distance
+    (3936 km) preview as "1d away," not the "~22h" every other fixture in
+    this codebase quotes for the same route.** `FlightCard`'s own test
+    fixture and `flight-demo.tsx`'s hardcoded `effectiveSpeedKmh: 178.3` both
+    predate the fatigue term actually being exercised end-to-end against a
+    real distance this large — they hand-pick a speed/duration pair that
+    happens to land at ~22h, they do not derive it from
+    `effectiveSpeedKmh(distanceKm: 3936, ...)`. Actually calling that
+    function (as `ComposeScreen`'s due-time preview now genuinely does) with
+    `DEFAULT_CONDITIONS` gives `storm=1`, `fatigue≈0.918`,
+    `speedKmh≈162.5`, `durationMs≈87.2M` — just over the 24h `DAY` threshold
+    `formatEta` branches on, so it renders `"1d away"` rather than
+    `"22h ??m away"`. Nothing is wrong here — the fixtures were always
+    hand-picked demo numbers, not physics outputs — but it means "3936 km ⇒
+    ~22h" is not actually a safe assumption to carry into a new call site
+    without checking; the real function and the demo fixtures have quietly
+    drifted apart on this one distance, and it is worth re-deriving rather
+    than re-quoting whenever a future item calls `effectiveSpeedKmh`/
+    `durationMs` directly against this same 3936 km figure.
+  - **A static "no forbidden identifier" test is only as strong as its
+    regex's word-boundary choice, and the natural first draft (`\b`-bounded)
+    is the wrong one for this exact purpose.** A `\b`-bounded pattern is the
+    right choice when you want to match a *word*, but "no handler named X"
+    in practice means "no handler whose name is built from X," which is a
+    substring question, not a word-boundary one — worth remembering for any
+    future acceptance criterion phrased as "no handler/function named ___
+    exists," since the natural-seeming regex silently under-enforces it.
+- **Follow-ups filed:** none. The next unblocked `todo` items are `M1-09`
+  (the demo harness, depends on `M1-08`, still `todo`) and `M1-08` (arrival,
+  depends on `M1-16`/`M1-07`, `M1-07` now done — `M1-08` itself is still
+  partly blocked on Q-002 for its Realtime half, per its own roadmap entry).
+  `M1-11` (a real Supabase client) remains blocked on Q-002.

@@ -1253,9 +1253,9 @@ cover the gap rather than passing by coincidence.
 
 ---
 
-### [ ] M1-07 — Compose and release
+### [x] M1-07 — Compose and release
 
-**Status:** in-progress · **Size:** M · **Depends on:** M1-02, M1-03
+**Status:** done · **Size:** M · **Depends on:** M1-02, M1-03
 
 **Why:** Releasing a bird must feel like a decision, not like hitting send. The
 irreversibility is stated up front because that is the deal.
@@ -1269,10 +1269,46 @@ pre-release confirmation stating the due time and that it cannot be recalled; a
 - Do not let a double-tap release two birds.
 
 **Acceptance criteria:**
-- [ ] typing a 281st character is impossible
-- [ ] a double-tap on release calls the edge function exactly once
-- [ ] a network failure preserves the note text and shows the in-fiction copy
-- [ ] no handler named recall, cancel, unsend or edit exists in the flow
+- [x] typing a 281st character is impossible
+- [x] a double-tap on release calls the edge function exactly once
+- [x] a network failure preserves the note text and shows the in-fiction copy
+- [x] no handler named recall, cancel, unsend or edit exists in the flow
+
+**Resolution note:** no real Supabase client exists anywhere in the mobile
+app yet (`M1-11`, blocked on Q-002) and no conversation/contacts screen
+exists to navigate here from, so — matching `M1-03`'s own precedent for the
+same gap — `ComposeScreen` takes an injected `ComposeDeps.release(body)`
+contract rather than calling a real Edge Function, and `app/compose.tsx`
+wires an honest placeholder (`realComposeDeps`) that always rejects with a
+message pointing at `M1-11`, plus a placeholder recipient/distance (`Ana`,
+3936 km — the same LA-NYC fixture `flight-demo.tsx` already uses) rather
+than a real resolved recipient. "Optimistic navigation to the flight
+screen" is wired as literally as the app currently allows: `onReleased`
+calls `router.replace('/flight-demo')`, the only flight screen route that
+exists. The pre-release confirmation's "due time" is a genuine preview —
+`effectiveSpeedKmh`/`durationMs`/`formatEta` run for real against the given
+`distanceKm`, the same physics the server will actually apply at release —
+not a second, independently-worded estimate; it does not gate or reach
+`deps.release` and the server still rolls the real flight (ADR-001). The
+double-tap guard is a `useRef` boolean checked and set synchronously at the
+top of `startRelease`, so it holds even against two taps landing before any
+re-render, not only against the confirm button disappearing once the phase
+changes. The "no recall/cancel/unsend/edit" criterion is proven by a static
+scan (`ComposeScreen.test.tsx`) over declared identifier names in
+`ComposeScreen.tsx`, `app/compose.tsx` and `compose-deps.ts` with comments
+stripped first — a substring match, not a `\b`-bounded one, since self-review
+(`/code-review --effort high`) found the first version's bounded regex could
+not actually catch a realistic compound name like `handleCancel` or
+`editNote`, only the bare word itself. Self-review also found `previewDueIn`
+re-ran the speed/duration physics on every keystroke; fixed with a
+`useMemo` keyed on `distanceKm`. No `supabase/`, auth, or RLS touched — no
+`/security-review` per `docs/LOOP.md` §4. No new runtime dependency.
+
+**Touches:** `apps/mobile/src/ui/screens/ComposeScreen.tsx`,
+`ComposeScreen.test.tsx`, `apps/mobile/src/data/compose-deps.ts`,
+`apps/mobile/app/compose.tsx`, `apps/mobile/src/ui/copy/strings.ts`,
+`strings.test.ts` (new `compose*` copy variants — this item had no
+`Touches:` line of its own; noted per `docs/LOOP.md` §3).
 
 ---
 
