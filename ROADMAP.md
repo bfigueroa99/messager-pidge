@@ -1255,7 +1255,7 @@ cover the gap rather than passing by coincidence.
 
 ### [ ] M1-07 — Compose and release
 
-**Status:** todo · **Size:** M · **Depends on:** M1-02, M1-03
+**Status:** in-progress · **Size:** M · **Depends on:** M1-02, M1-03
 
 **Why:** Releasing a bird must feel like a decision, not like hitting send. The
 irreversibility is stated up front because that is the deal.
