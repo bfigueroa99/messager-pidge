@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "paused": false,
+  "iteration": 35,
+  "current_item": null,
+  "claimed_at": null,
+  "claimed_by": null,
+  "last_outcome": "M1-07 (iteration 34): ComposeScreen (new) - composing -> pre-release confirmation -> releasing state machine, following LoftPicker's own injected-deps pattern (M1-03) rather than a real backend call. Note field truncates to 280 chars in onChangeText itself (state, not just the native maxLength attribute, is the source of truth - jsdom's fireEvent.change bypasses real browser maxlength enforcement). Tapping Release opens a confirmation (no call yet); the confirmation's own Release calls startRelease, which checks-and-sets a useRef boolean before calling deps.release and before the ~1.2s ceremony (DURATIONS_MS.release, already anticipated in tokens.ts) - a double-tap is refused synchronously, not merely by the button disappearing on re-render. Promise.all([deps.release(note), ceremony]) surfaces a failure immediately (no wait for the ceremony) while a success always takes >=1.2s; on failure the note text is untouched and the existing offline copy key renders. The pre-release confirmation's due-time preview is a genuine call into effectiveSpeedKmh/durationMs/formatEta against the caller-supplied distanceKm, memoized on distanceKm - never reaches or gates deps.release. No real Supabase client exists in the mobile app yet (Q-002/M1-11 still blocked) and no conversation screen exists to arrive from, so app/compose.tsx wires an honest placeholder (realComposeDeps, always rejects, referencing M1-11) plus a placeholder recipient/distance (Ana, 3936km, matching flight-demo.tsx's own fixture) - same precedent M1-03 set. Optimistic navigation calls router.replace('/flight-demo'), the only flight screen route that exists. Self-review (/code-review --effort high) found two real issues, both fixed: (1) the no-recall/cancel/unsend/edit static-scan test's first regex was \\b-bounded and could not actually catch a realistic compound name like handleCancel or editNote (confirmed directly) - fixed to a plain substring match, re-verified the three scanned files' existing declared names contain none of the four forbidden substrings; (2) previewDueIn re-ran the speed/duration physics on every keystroke - fixed with useMemo keyed on distanceKm. pnpm run verify green throughout: 224 tests (floor 216->224, +8 new [M1-07] tests), gate:roadmap ok (28 done/6 pending), gate:tests ok. No supabase/auth/RLS touched, no /security-review needed. No new runtime dependency.",
+  "consecutive_failures": 0,
+  "last_hardening_iteration": 30,
+  "last_audit_iteration": 31,
+  "test_count_floor": 224,
+  "branch": "claude/app-development-loop-szg7yj",
+  "budget": {
+    "max_iterations": 60,
+    "stop_after": "2026-09-15T00:00:00Z"
+  },
+  "pr_number": 1
+}

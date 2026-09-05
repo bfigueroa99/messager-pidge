@@ -1,0 +1,74 @@
+name: verify
+
+on:
+  push:
+    branches: ['claude/**', 'main']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Playwright's own browser download is the one part of this workflow
+      # `cache: pnpm` above does not cover. Keyed on the exact pinned version
+      # (package.json's devDependencies.playwright) rather than the whole
+      # lockfile, so an unrelated dependency bump doesn't also pay for a
+      # fresh ~150MB Chromium download — bump this key when that version does.
+      - name: cache playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-1.62.1
+
+      # M0-08's shot script and its own test drive a real headless Chromium.
+      # `playwright install` never prompts — it is a plain download — so this
+      # needs nothing beyond running non-interactively, which every CI shell
+      # already is.
+      - name: install chromium for playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      # The Edge Function imports a committed esbuild bundle of
+      # packages/flight-sim (ADR-010) because Deno cannot resolve a pnpm
+      # workspace package. Regenerate it and fail on drift, so the bundle can
+      # never silently fall behind the engine it is supposed to mirror.
+      - name: rebuild the shared engine bundle and check it is not stale
+        run: |
+          pnpm run build:engine
+          git diff --exit-code -- supabase/functions/_shared/flight-sim.js
+
+      - name: typecheck
+        run: pnpm run typecheck
+
+      - name: lint
+        run: pnpm run lint
+
+      # PGlite runs a real Postgres in WASM, so the RLS suite needs no service
+      # containers and no Docker daemon.
+      - name: test
+        run: pnpm run test:cov
+
+      - name: gate — no checkbox without a test
+        run: pnpm run gate:roadmap
+
+      - name: gate — test-count ratchet
+        run: pnpm run gate:tests

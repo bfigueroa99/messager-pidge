@@ -1,0 +1,35 @@
+{
+  "name": "pidge",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -b --pretty false",
+    "lint": "eslint . --max-warnings=0",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --ci",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --ci --coverage",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "gate:roadmap": "node scripts/check-roadmap-tests.mjs",
+    "gate:tests": "node scripts/check-test-count.mjs",
+    "shot": "node scripts/shot.mjs",
+    "build:engine": "node scripts/build-engine.mjs",
+    "seed:cities": "node scripts/generate-cities-seed.mjs",
+    "verify": "pnpm run typecheck && pnpm run lint && pnpm run test:cov && pnpm run gate:roadmap && pnpm run gate:tests"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.5",
+    "@eslint/js": "9.39.0",
+    "@types/jest": "30.0.0",
+    "@types/node": "22.19.1",
+    "esbuild": "0.25.5",
+    "eslint": "9.39.0",
+    "jest": "30.2.0",
+    "playwright": "1.62.1",
+    "ts-jest": "29.4.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.46.4"
+  }
+}

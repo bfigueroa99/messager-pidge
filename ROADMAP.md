@@ -1,0 +1,1390 @@
+# Roadmap
+
+Ordered. The loop always takes the **topmost item with status `todo` whose
+dependencies are all `done`**. You steer by reordering, editing, or setting an
+item to `blocked` — see `docs/LOOP.md` §6 of "how you control it". Never delete a
+`done` item; the history is the audit trail.
+
+- **Status:** `todo` · `in-progress` · `blocked` · `done`
+- **Size:** `S` (under an hour) · `M` (one session) · `L` (**must be split
+  before starting** — splitting is itself a complete iteration)
+- Acceptance criteria are written to **be test names**. A criterion may only be
+  ticked when a test whose name contains `[ITEM-ID]` covers it; `pnpm run
+  gate:roadmap` enforces this.
+
+---
+
+## AUDIT gaps
+
+Items filed by an AUDIT iteration (`docs/LOOP.md` §7) because a shipped
+feature contradicts `docs/PRODUCT.md`. Kept in their own section at the top
+so they are always the topmost `todo` and get fixed before new feature work
+resumes, without implying they belong to any milestone's own goal.
+
+---
+
+### [x] M0-15 — `effectiveSpeedKmh` must never let wind shorten a flight below its calm duration
+
+**Status:** done · **Size:** S · **Depends on:** none
+**Read first:** `docs/PRODUCT.md` §7 (Passage — "It adds texture and duration;
+it never subtracts."), `packages/flight-sim/src/speed.ts`
+
+**Why:** Filed by the AUDIT iteration (`docs/LOOP.md` §7), iteration 11, as a
+drift finding — see `docs/AUDIT.md`. PRODUCT.md §7 is explicit that the wind
+mechanic must only ever add duration, never subtract it, but
+`effectiveSpeedKmh` currently lets a tailwind push cruise speed *above*
+`BASE_SPEED_KMH * storm * fatigue`, and `plan.test.ts`'s own
+`[M0-03] slows a bird in a storm and speeds it with a tailwind` test asserts
+exactly that as intended. A tailwind that shortens a flight is a speed boost
+gated on server-rolled weather instead of user action, but it is still a way
+for a flight to arrive sooner than its unmodified physics allow — the thing
+§7 and the "No speed" non-goal (§8) both rule out.
+
+**Do:**
+- Change `effectiveSpeedKmh` so a positive (tailwind) `windComponentKmh`
+  never raises speed above what `storm`/`fatigue` alone would give — e.g.
+  clamp the wind term to `[-MAX_WIND_COMPONENT_KMH, 0]`, or clamp the final
+  result to `<= BASE_SPEED_KMH * storm * fatigue`.
+- Rewrite the `[M0-03] slows a bird in a storm and speeds it with a
+  tailwind` test (renaming it `[M0-15]`) to assert the corrected behaviour:
+  a tailwind may relieve some of a storm's penalty, but never exceed the
+  calm baseline.
+- Add a `[M0-15]` regression test asserting `effectiveSpeedKmh` never
+  exceeds the wind-free speed for the same `stormIntensity`/`distanceKm`,
+  across a range of wind inputs including the existing absurd-wind clamp
+  test's input.
+
+**Do NOT:**
+- Do not remove the wind mechanic; §7 wants it for texture, just never as a
+  net speedup.
+- Do not touch `hazard.ts` or `plan.ts`'s death-roll logic — this is a
+  `speed.ts`-only fix.
+
+**Acceptance criteria:**
+- [x] `effectiveSpeedKmh` never returns a value greater than the same call
+  with `windComponentKmh: 0`
+- [x] a strong tailwind still measurably reduces the *penalty* from a storm,
+  without exceeding the calm baseline
+- [x] the corrected test fails against the pre-fix function and passes
+  against the fix
+
+**Touches:** `packages/flight-sim/src/speed.ts`,
+`packages/flight-sim/src/plan.test.ts`
+
+**Resolution note:** criteria #1 and #2 above are in tension taken fully
+literally — #1 requires `effectiveSpeedKmh` to never exceed its own
+`windComponentKmh: 0` result *for the same storm and distance*, which
+mathematically forces a tailwind's contribution to be clamped to zero
+whenever added to that same storm's baseline (any positive contribution
+would, by definition, exceed the zero-wind baseline #1 pins). So "measurably
+reduces the penalty from a storm" (#2) is satisfied by comparing a tailwind
+against a headwind *during the same storm*, not against that storm's own
+zero-wind speed — see `docs/JOURNAL.md`'s entry for this item.
+
+---
+
+## M0 — Scaffolding
+
+**Goal:** an agent can clone, install, typecheck, lint, test the pure engine,
+run the real migrations against a real Postgres, render the app in a headless
+browser, and screenshot it — all on Linux, with no macOS and no simulator.
+
+---
+
+### [x] M0-01 — Workspace, toolchain and the purity guard
+
+**Status:** done · **Size:** M · **Depends on:** none
+
+**Why:** Nothing can be verified until `verify` is green. This is the floor the
+entire loop stands on.
+
+**Acceptance criteria:**
+- [x] flight-sim declares no dependencies of any kind
+- [x] no engine source file imports anything at all outside the engine
+- [x] no engine source file reads an ambient clock or an unseeded RNG
+- [x] TypeScript strict mode is on and unchecked index access is off
+- [x] .gitignore covers node_modules, so the Stop hook never jams
+
+**Touches:** `package.json`, `tsconfig.base.json`, `eslint.config.mjs`,
+`jest.config.js`, `.gitignore`, `tests/repo-contract.test.ts`
+
+---
+
+### [x] M0-02 — Geodesy: distance, great-circle interpolation, antimeridian
+
+**Status:** done · **Size:** M · **Depends on:** M0-01
+
+**Why:** PRODUCT.md pillar 4 — geography is the mechanic. Every number and every
+pixel derives from this file, and it must be correct at the seams.
+
+**Acceptance criteria:**
+- [x] measures LA to NYC as 3936 km, within 0.5%
+- [x] measures London to Sydney as 16994 km, within 0.5%
+- [x] is symmetric and zero for coincident points
+- [x] returns the endpoints exactly at f=0 and f=1
+- [x] clamps f outside [0,1] rather than extrapolating off the route
+- [x] bows north of the chord — a great circle, not a straight line
+- [x] returns a finite point for coincident and antipodal endpoints
+- [x] densified segment lengths sum to the great-circle distance
+- [x] holds the sum-of-segments property over 200 seeded random routes
+- [x] gives LA to NYC an initial bearing of ~66 degrees
+- [x] always returns a value in [0,360)
+- [x] splits a Tokyo to LA route into two drawable segments
+- [x] leaves no segment containing a longitude jump over 180 degrees
+- [x] returns a single segment for a route that never crosses
+- [x] returns nothing for an empty path
+
+**Touches:** `packages/flight-sim/src/geo.ts`, `geo.test.ts`
+
+---
+
+### [x] M0-03 — The planner: seeded fate, speed and hazard
+
+**Status:** done · **Size:** L (split into engine + calibration during bootstrap)
+**Depends on:** M0-02
+
+**Why:** INV-1, INV-4 and INV-5. The whole app is a renderer of this function.
+
+**Acceptance criteria:**
+- [x] flies LA to NYC in about 22 hours, matching the original
+- [x] gives a 1000 km flight the original 0.2% risk
+- [x] floors a trivially short hop at the minimum flight time
+- [x] keeps even London to Sydney under the seven-day ceiling
+- [x] returns deep-equal results for identical inputs
+- [x] never reads the ambient clock
+- [x] produces different fates for different seeds on the same route
+- [x] keeps every hint of the outcome out of the public half
+- [x] sets resolveAt to arrival for survivors and to death for the lost
+- [x] observed loss over 20000 seeds matches the modelled probability
+- [x] rises monotonically with distance
+- [x] never exceeds the 8% ceiling, however brutal the route
+- [x] never kills a first-ever bird
+- [x] reproduces its golden vector for seed 42
+- [x] gives each named stream an independent sequence
+
+**Touches:** `packages/flight-sim/src/{plan,hazard,speed,rng,constants}.ts` + tests
+
+---
+
+### [x] M0-04 — Client-side flight state and the canon copy
+
+**Status:** done · **Size:** M · **Depends on:** M0-03
+
+**Why:** INV-3 and INV-6 — position is derived, and reopening the app never
+replays a journey.
+
+**Acceptance criteria:**
+- [x] sits at the origin before departure
+- [x] is at the destination once the arrival time has passed
+- [x] is exactly halfway at the halfway point
+- [x] advances monotonically and never rewinds
+- [x] is a pure function of time — reopening the app never replays a journey
+- [x] points the bird along the arc, not straight at the destination
+- [x] pins a lost bird where it fell, forever
+- [x] matches the original copy for a multi-day flight
+- [x] says "arriving" in the final minute
+- [x] never shows a percentage or a speed
+- [x] renders miles with a thousands separator and no decimals
+
+**Touches:** `packages/flight-sim/src/{state,format}.ts` + tests
+
+---
+
+### [x] M0-05 — Schema, RLS, the release function and the reaper
+
+**Status:** done · **Size:** L (split during bootstrap) · **Depends on:** M0-01
+
+**Why:** INV-2, INV-5, INV-7. This is the product's core guarantee, and if it is
+not written before the UI it will never be written.
+
+**Acceptance criteria:**
+- [x] the recipient CANNOT read the body of a bird still in the air
+- [x] the recipient still cannot read it one second before landing
+- [x] the recipient CAN read it once the bird has landed
+- [x] the sender can always reread their own note, even mid-flight
+- [x] a stranger sees nothing at all
+- [x] a signed-out visitor sees nothing at all
+- [x] the recipient NEVER reads the note of a bird that died
+- [x] the note is hard-deleted, not merely hidden
+- [x] the recipient is never told that a lost message existed
+- [x] nobody — not even the sender — can select from flight_secrets
+- [x] a doomed flight still reads as "pending" while it is in the air
+- [x] flight events in the future are invisible to both parties
+- [x] is idempotent — running it twice resolves a flight once
+- [x] stamps landed_at from the scheduled time, not from when it ran
+- [x] an authenticated user cannot forge a flight
+- [x] snaps a precise GPS fix to a city centroid before storing it
+
+**Touches:** `supabase/migrations/*.sql`, `supabase/tests/harness.ts`,
+`supabase/tests/rls/visibility.test.ts`
+
+---
+
+### [x] M0-06 — Loop machinery and CI
+
+**Status:** done · **Size:** M · **Depends on:** M0-01
+
+**Why:** This is a long autonomous build. Without written canon and mechanical
+gates, it drifts into a normal messenger with a bird theme.
+
+**Acceptance criteria:**
+- [x] every durable state file exists
+- [x] state.json carries a kill switch and a hard budget
+- [x] verify runs both gates, so neither can be quietly dropped
+- [x] PRODUCT.md still forbids the three things agents drift toward
+
+**Touches:** `docs/*`, `ROADMAP.md`, `CLAUDE.md`, `.loop/state.json`,
+`scripts/*.mjs`, `.github/workflows/ci.yml`
+
+---
+
+### [x] M0-07 — Expo app shell
+
+**Status:** done · **Size:** M · **Depends on:** M0-01
+**Read first:** `CLAUDE.md`, `docs/PRODUCT.md` §5
+
+**Why:** There is no app yet — only an engine and a database. Everything from
+M1 onward renders into this shell. Keep it boring; the interesting parts come
+later.
+
+**Do:**
+- `apps/mobile` as a pnpm workspace package: Expo SDK 57, React Native 0.86,
+  TypeScript strict, `expo-router` v7 file routing.
+- `metro.config.js` made monorepo-aware (`watchFolders` + `nodeModulesPaths`) so
+  `@pidge/flight-sim` resolves from the workspace root.
+- `app.config.ts` (typed, reads env), `.env.example`, `eas.json` with `development`
+  / `preview` / `production` profiles.
+- `jest-expo` as a fourth Jest project so component tests can run later.
+- One route, `app/index.tsx`, rendering the app name and nothing else.
+- Add `apps/mobile` to `pnpm-workspace.yaml` and the root `tsconfig.json`
+  references.
+
+**Do NOT:**
+- Do not add a map library — that is `M1-13`, and the choice is still open
+  (ADR-007).
+- Do not add navigation beyond the single index route.
+- Do not add Supabase client code — that is `M1-02`.
+- Do not add any native module that breaks `expo start --web`.
+
+**Acceptance criteria:**
+- [x] `pnpm run verify` still exits 0 with the new package in the workspace
+- [x] `expo export -p web` produces a bundle without error
+- [x] a component test renders the index route and finds the app name
+- [x] importing `@pidge/flight-sim` from `apps/mobile` typechecks
+
+**Verify with:** `pnpm run verify && pnpm --filter mobile run export:web` (M0-08
+wrapped the raw `expo export -p web` in `apps/mobile/scripts/export-web.mjs` to
+keep `app/_dev` out of the production bundle — running the raw command directly
+bypasses that and reintroduces the leak `tests/web-export.test.ts`'s `[M0-08]`
+test checks for)
+
+**Notes:** Expo SDK 57 is bridgeless-only; there is no legacy architecture to
+fall back to. Anything you add must support the New Architecture.
+
+---
+
+### [x] M0-09 — The release function refuses a bird that is not yours, not idle, or dead
+
+**Status:** done · **Size:** M · **Depends on:** M0-05
+**Found by:** `/code-review --effort high`, iteration 2 — see `docs/JOURNAL.md`
+
+**Why:** `release_pigeon` currently checks nothing about the bird. Confirmed
+against the real migrations in PGlite: one user can release another user's
+pigeon, and the same bird can carry two flights at once. The reaper compounds
+it — its `birds` CTE rewrites `is_alive`, `died_at` and `death_flight_id`
+unconditionally, so delivering a later flight brings a dead bird back to life.
+That is `PRODUCT.md` §8 "no resurrect", enforced by nothing.
+
+**Do:** a new forward-only migration adding the guards, and tests for each.
+
+**Do NOT:** edit `0004_release_and_reaper.sql` — migrations are forward-only.
+
+**Acceptance criteria:**
+- [x] a user cannot release a bird belonging to someone else
+- [x] a bird already in the air cannot be released again
+- [x] a dead bird cannot be released
+- [x] delivering a flight never resurrects a bird that died on an earlier one
+
+**Touches:** `supabase/migrations/0006_release_guards.sql`,
+`supabase/tests/rls/release-guards.test.ts`, `supabase/tests/harness.ts`
+(extended to let tests pass a pigeon id and sender/recipient overrides —
+needed to construct these scenarios at all; not in the original Touches list,
+noted here since 0005 turned out to already be taken by the reaper's cron
+schedule), `jest.config.js` (unrelated latent bug this item's second `db` test
+file exposed — see the journal).
+
+---
+
+### [x] M0-10 — Message visibility must be gated on `now()`, not on the reaper
+
+**Status:** done · **Size:** S · **Depends on:** M0-05
+**Read first:** `docs/DECISIONS.md` ADR-002
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** ADR-002 and INV-5 say the body becomes readable when the policy's own
+`now()` says the bird has landed, precisely so a cron outage delays a
+notification but never a message. `bodies_select_recipient` instead reads the
+reaper-set `status`/`outcome` columns. Confirmed: with cron down, a flight that
+landed eight hours ago is unreadable. The existing test runs the reaper first,
+so it passes without covering the guarantee it claims.
+
+**Acceptance criteria:**
+- [x] the recipient can read a landed flight's note with the reaper never run
+- [x] a doomed flight's note stays unreadable with the reaper never run
+- [x] the in-flight cases still hold with the reaper never run
+
+**Touches:** `supabase/migrations/0007_visibility_ignores_reaper.sql` (the
+`Touches:` line's own `0005_*.sql` guess was stale — see `M0-09`'s note, `0005`
+was already taken before this item was filed; `0006` was taken too, by this
+item's predecessor), `supabase/tests/rls/visibility.test.ts`
+
+---
+
+### [x] M0-11 — The loft snap: wrap the antimeridian, weight by latitude, fail loudly
+
+**Status:** done · **Size:** M · **Depends on:** M0-05
+**Read first:** `docs/PRODUCT.md` §9, INV-7
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** `snap_profile_location` is the single enforcement point for INV-7 and
+it has four defects. It compares raw squared degrees, so it neither wraps at
+±180 nor scales longitude by cos(lat): (-18.2, -179.9) snaps to Nuku'alofa,
+560 km away in the wrong country, rather than Suva at 175 km. Clearing a loft
+returns early and leaves `city_id`/`city_label` stale, so withdrawing your
+location still shows correspondents your city. `select … into` with no
+`NOT FOUND` guard silently nulls the coordinates if `cities` is empty or
+unreadable. And it is the only function here without a pinned `search_path`.
+
+**Acceptance criteria:**
+- [x] a point just west of the antimeridian snaps to the city just east of it
+- [x] a high-latitude point snaps to the nearest city by ground distance
+- [x] clearing the loft clears the city label with it
+- [x] the trigger raises rather than nulling a coordinate when no city matches
+- [x] the function runs with a pinned search_path
+
+**Touches:** `supabase/migrations/0008_loft_snap_fixes.sql` (the `Touches:`
+line's own `0005_*.sql` guess was stale — `0005` was already taken by the
+cron schedule; see `M0-09`'s note), `supabase/tests/rls/loft-snap.test.ts`
+
+---
+
+### [x] M0-12 — `arcSegments` must not drop the origin at the antimeridian
+
+**Status:** done · **Size:** S · **Depends on:** M0-02
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** `splitAtAntimeridian` discards single-point segments. When the very
+first sample crosses ±180 the origin vertex is one of those, so the drawn route
+starts 135 km from the loft it left. INV-6 says the chart shows the bird's true
+position; that includes where it took off.
+
+**Acceptance criteria:**
+- [x] a route starting just west of the antimeridian keeps its origin vertex
+- [x] every segment of a split route still contains at least two points
+- [x] the sum-of-segments property still holds across the seam
+
+**Touches:** `packages/flight-sim/src/geo.ts`, `geo.test.ts`
+
+---
+
+### [x] M0-13 — The roadmap gate must count test names, not any mention
+
+**Status:** done · **Size:** S · **Depends on:** M0-06
+**Found by:** `/code-review --effort high`, iteration 2
+
+**Why:** `check-roadmap-tests.mjs` counts `[ID]` anywhere in a test file's text,
+so a comment mentioning an item satisfies "no checkbox without a test". The gate
+is the loop's honesty mechanism; a gate that can be satisfied by a comment is
+worse than none, because it reads as evidence.
+
+**Acceptance criteria:**
+- [x] an ID appearing only in a comment does not count as evidence
+- [x] an ID inside an `it()` or `test()` name does count
+- [x] the gate still passes on the repository as it stands
+
+**Touches:** `scripts/check-roadmap-tests.mjs`, `tests/check-roadmap-tests.test.ts`
+
+---
+
+### [x] M0-14 — Give `apps/mobile`'s composite project an `outDir`
+
+**Status:** done · **Size:** S · **Depends on:** M0-07
+**Found by:** iteration 3, while landing `M0-10`
+
+**Why:** `packages/flight-sim/tsconfig.json` sets `rootDir`/`outDir` so its
+compiled output lands in a gitignored `dist/`. `apps/mobile/tsconfig.json` sets
+neither, and the root `tsconfig.json` references both projects as composite —
+composite projects must emit declarations for other projects to reference.
+Observed once, in this iteration's fresh container: the first `tsc -b` after
+`pnpm install` emitted `.js`/`.d.ts` files next to every `apps/mobile` source
+file (`app.config.ts`, `app/index.tsx`, `src/config/app-name.ts`, the shell
+test), untracked and not covered by `.gitignore`, which then failed `eslint .`
+with `no-undef` on the plain-JS output. It did not reproduce on any later run
+in the same container — the trigger looks narrow (possibly whatever the
+`unrs-resolver` ignored-build-script warning left unfinished) — but the missing
+`outDir` is real regardless of how reliably it fires, and a `verify` that goes
+red on a phantom file with no diff to point at is a bad failure mode for an
+unattended loop to hit.
+
+**Acceptance criteria:**
+- [x] `apps/mobile/tsconfig.json` has an `outDir` outside the source tree
+- [x] `pnpm run typecheck` from a clean `node_modules` produces no `.js`/`.d.ts`
+      file under `apps/mobile/app` or `apps/mobile/src`
+- [x] `pnpm run verify` still exits 0
+
+**Touches:** `apps/mobile/tsconfig.json`, `.gitignore`, `tests/mobile-tsconfig-outdir.test.ts`
+
+---
+
+### [x] M0-08 — Headless eyes: web preview and screenshots
+
+**Status:** done · **Size:** M · **Depends on:** M0-07
+**Read first:** `CLAUDE.md` (the layering rule and why it exists)
+
+**Why:** This container has no simulator. Without a headless render path no
+agent can ever confirm that the map looks right — and the map *is* the product.
+This item buys sight.
+
+**Do:**
+- `react-native-web` configured so `expo start --web` and `expo export -p web`
+  both succeed.
+- Playwright (chromium only), viewport 393×852, `deviceScaleFactor: 3`.
+- `pnpm run shot -- <story>`: boot the web bundle, navigate, wait for a
+  `data-testid="ready"` marker, write `artifacts/shots/<story>.png`.
+- A story route at `app/_dev/[story].tsx` rendering components in isolation with
+  fixed props and a **frozen clock** via a `?t=<epoch_ms>` query parameter.
+- `artifacts/` in `.gitignore`.
+
+**Do NOT:**
+- Do not add pixel-diff regression testing yet — the UI is still changing shape.
+- Do not ship the `_dev` routes in a production bundle.
+
+**Acceptance criteria:**
+- [x] `pnpm run shot -- index` writes a non-empty PNG in under 120 seconds
+- [x] two consecutive runs with a frozen clock produce byte-identical PNGs
+- [x] the exported production web bundle contains no `_dev` route
+- [x] chromium installs in CI without an interactive prompt
+
+**Notes:** Freeze the clock via the query parameter *now*. Retrofitting
+determinism after the flight screen exists is painful, and every later chart
+screenshot depends on it.
+
+**Touches:** `scripts/shot.mjs`, `scripts/lib/file-lock.mjs`,
+`apps/mobile/app/_dev/[story].tsx`, `apps/mobile/scripts/export-web.mjs`
+(wraps `expo export -p web` — confirmed directly that the raw command still
+bundles `_dev` into `dist/` despite it having no `generateStaticParams`),
+`apps/mobile/package.json` (`export:web` now calls the wrapper),
+`tests/shot.test.ts`, `tests/web-export.test.ts` (extended with the
+no-`_dev`-route check — reusing that test's own export instead of running a
+second one avoids racing it, see the journal), `package.json` (`shot` script,
+`playwright` devDependency), `.gitignore`, `eslint.config.mjs` (globals for
+the new scripts), `.github/workflows/ci.yml`, `docs/DECISIONS.md` (ADR-009),
+`ROADMAP.md` (M0-07's own `Verify with` line, which the export wrapper made
+stale).
+
+---
+
+## M1 — The magic moment
+
+**Goal:** one pigeon, one route, one arrival — and it feels like a real object
+moving through the real world.
+
+**Demo:** two browser panes. Pick Los Angeles, pick New York, type a note,
+release. The chart draws a dashed great circle and the card reads
+`🕊 1d 2h away · 2,446 mi`. With the clock scaled ×1440 the whole 22 hours plays
+in 55 seconds, and the second pane says "A pigeon has arrived." Then run it again
+with the bird doomed, and watch the note be destroyed while the recipient never
+learns it existed.
+
+---
+
+### [x] M1-01 — Design tokens, typography, and the single strings module
+
+**Status:** done · **Size:** M · **Depends on:** M0-07
+**Read first:** `docs/PRODUCT.md` §5 (the tone-of-voice table)
+
+**Why:** Centralising every user-facing string in one reviewed file is the
+mechanical enforcement of pillar 2. An agent cannot accidentally ship "Delivery
+failed. Retry?" if strings cannot be written inline.
+
+**Do:**
+- `src/ui/theme/tokens.ts`: colours (chart water, land, coastline hairline,
+  route dash, bird, paper, ink, alarm), spacing, radii, durations. Dark-first.
+- `src/ui/theme/typography.ts`: two families max — a humanist serif for dispatch
+  text, a mono for times and distances. Sizes tied to Dynamic Type ratios.
+- `src/ui/copy/strings.ts`: a typed, flat, exhaustive catalogue with a
+  `t()`-shaped accessor. No runtime i18n dependency.
+- A test that fails on a hardcoded alphabetic literal inside a JSX text node
+  anywhere under `apps/mobile/src/ui/**` or `apps/mobile/app/**`.
+
+**Do NOT:**
+- Do not localise to other languages yet.
+- Do not build a component library; build the tokens only.
+
+**Acceptance criteria:**
+- [x] `strings.ts` has a key for every row of the tone-of-voice table
+- [x] a JSX text node with a hardcoded literal fails the lint test
+- [x] no string contains an exclamation point, "failed", "error", "retry" or "sent"
+- [x] every string resolves through the typed accessor without a cast
+
+**Notes:** The third criterion is the voice guard. If a legitimate string needs
+one of those words, rewrite the string — do not weaken the test.
+
+**Touches:** `apps/mobile/src/ui/theme/tokens.ts`,
+`apps/mobile/src/ui/theme/typography.ts`, `apps/mobile/src/ui/copy/strings.ts`,
+`apps/mobile/src/ui/copy/strings.test.ts`, `eslint.config.mjs` (the voice
+guard — a `no-restricted-syntax` block scoped to `apps/mobile/src/ui/**` and
+`apps/mobile/app/**`, excluding `app/_dev/**`), `tests/voice-guard.test.ts`,
+`tests/scripts/lint-fixture.mjs` (spawned as a subprocess so the guard's own
+`.mjs` ESM config can be linted against from a ts-jest/CommonJS test file —
+same reason `M0-13`'s gate tests spawn a subprocess).
+
+---
+
+### [x] M1-02 — Share the engine with the Edge Function, and release for real
+
+**Status:** done · **Size:** M · **Depends on:** M0-05
+**Read first:** `packages/flight-sim/src/plan.ts`, `supabase/migrations/0004_release_and_reaper.sql`
+
+**Why:** ADR-001. The flight math must have exactly one implementation. The
+Edge Function plans the flight; `release_pigeon` writes it down.
+
+**Do:**
+- `scripts/build-engine.mjs`: esbuild bundle of `@pidge/flight-sim` to
+  `supabase/functions/_shared/flight-sim.js` (ESM, platform-neutral). Commit the
+  output.
+- A CI step regenerating it and failing on `git diff --exit-code`, so the bundle
+  can never drift from the source.
+- `supabase/functions/release-pigeon/index.ts`: a thin HTTP adapter that parses
+  the request, resolves the recipient's loft coordinates **server-side**, calls
+  `planFlight`, and invokes `release_pigeon` with the result.
+- A Node test for the handler with a stubbed Supabase client.
+
+**Do NOT:**
+- Do not put business logic in the Edge Function — it is an adapter.
+- Do not let the client supply the origin, the destination, or the departure
+  time. All three are the server's.
+
+**Acceptance criteria:**
+- [x] the bundled engine returns the same arrival time as the Node engine for LA to NYC
+- [x] the handler rejects a body longer than 280 characters before touching the database
+- [x] the handler ignores a client-supplied departure time
+- [x] the handler resolves the destination from the recipient's stored loft, not from the request
+
+**Touches:** `scripts/build-engine.mjs`, `supabase/functions/_shared/flight-sim.js`
+(generated), `supabase/functions/_shared/package.json` (marks the generated
+bundle as an ES module so Node's loader does not have to sniff it — needed for
+`tests/build-engine.test.ts`'s subprocess import, not requested by the item's
+own `Touches`-less "Do" list but a one-line consequence of it),
+`supabase/functions/release-pigeon/{index,handler,handler.test}.ts`,
+`supabase/functions/tsconfig.json`, `jest.config.js` (a `functions` project),
+`tests/build-engine.test.ts`, `tests/scripts/run-bundled-plan.mjs`,
+`eslint.config.mjs` (ignores the generated bundle; Fetch API globals for
+`supabase/functions/**`), `.github/workflows/ci.yml` (the freshness check),
+`docs/DECISIONS.md` (ADR-010), `package.json` (`esbuild` devDependency,
+`build:engine` script). This item had no `Touches:` line of its own; noted
+per `docs/LOOP.md` §3 rather than guessed at silently.
+
+**Note:** `/code-review --effort high` (self-review, iteration 14) found a
+real gap beyond the four listed criteria: `handleRelease` initially trusted
+`conversationId`/`recipientId` from the request without checking the
+authenticated sender was actually a member of that conversation —
+`release_pigeon` is revoked from `authenticated` precisely so this adapter is
+the one thing standing between a JSON body and a call made with the service
+role (see `supabase/migrations/0006_release_guards.sql`), so this would have
+let any authenticated user forge a flight into a conversation they were never
+part of. Fixed in the same iteration by adding `getConversationMemberIds` and
+requiring both ids to be members before any flight is planned; see
+`docs/JOURNAL.md`.
+
+---
+
+### [x] M1-10 — Honor "a user's first-ever bird never dies" in the release Edge Function
+
+**Status:** done · **Size:** S · **Depends on:** M1-02
+**Read first:** `docs/PRODUCT.md` §6 ("First-ever flight: never dies"),
+`packages/flight-sim/src/hazard.ts`, `supabase/functions/release-pigeon/handler.ts`
+
+**Why:** Filed by `/code-review --effort high` during `M1-02` (iteration 14).
+`planFlight`'s `isFirstEverFlight` flag already makes `deathProbability`
+return 0 when set — the pure engine has always honored this invariant — but
+`handleRelease` never computes it and never passes it, so `planFlight`
+defaults to `isFirstEverFlight: false` on every real release. A brand-new
+user's tutorial bird is therefore not actually protected by the one live path
+that releases a bird for real, even though every engine-level test proves the
+mechanism works.
+
+**Do:**
+- Add a `ReleaseDeps` dependency (e.g. `hasEverReleased(userId): Promise<boolean>`)
+  that the handler queries once per release.
+- Pass `isFirstEverFlight: !(await deps.hasEverReleased(senderId))` into
+  `planFlight`'s input.
+- Implement the real dependency in `index.ts` against `flights` (or
+  `pigeons.flights_completed` — pick whichever is correct once a flight from
+  this handler actually exists to query against; `flights.sender_id` is
+  populated at insert time by `release_pigeon` itself, so a `select exists(...)`
+  against it is the direct answer).
+
+**Do NOT:**
+- Do not change `packages/flight-sim`'s hazard model — it already does the
+  right thing when told the truth.
+
+**Acceptance criteria:**
+- [x] a sender's first call to `handleRelease` passes `isFirstEverFlight: true`
+- [x] a sender's second call to `handleRelease` passes `isFirstEverFlight: false`
+
+---
+
+### [x] M1-03 — Cities dataset and the loft picker
+
+**Status:** done · **Size:** M · **Depends on:** M0-07, M1-01
+**Read first:** `docs/PRODUCT.md` §9, `supabase/migrations/0001_init.sql`
+**Touches:** `apps/mobile/src/data/`, `apps/mobile/src/ui/screens/LoftPicker.tsx`,
+`apps/mobile/app/loft-picker.tsx`, `apps/mobile/src/ui/copy/strings.ts`,
+`scripts/generate-cities-seed.mjs`, `supabase/migrations/0009_seed_cities.sql`,
+`tests/cities-seed.test.ts`, `supabase/tests/rls/city-seed.test.ts`
+
+**Why:** INV-7. Choosing a city is offered *first*, before any location
+permission, which makes the app fully testable in CI and fully usable by someone
+who will not grant location.
+
+**Do:**
+- Bundle a GeoNames subset (cities over 15,000 population, ~1 MB) as a seed
+  migration plus a client-side search index.
+- A searchable picker screen writing to `profiles.home_lat/home_lon`, which the
+  existing database trigger snaps to a centroid.
+- Copy in plain English on this screen, per PRODUCT.md §5's consent exception.
+
+**Do NOT:**
+- Do not request location permission in this item — that is a later one.
+- Do not store anything more precise than what the trigger returns.
+
+**Acceptance criteria:**
+- [x] searching "Los Ang" surfaces Los Angeles within the first three results
+- [x] selecting a city stores the centroid, not the query
+- [x] the picker works with no network and no permissions granted
+- [x] the screen's copy contains no in-fiction language
+
+**Resolution note:** "Bundle a GeoNames subset ... ~1 MB" assumed network
+access to fetch one; this container has none (`.claude/settings.json` denies
+`curl`/`wget` on purpose — LOOP.md's own preamble). Shipped a curated,
+real-world subset instead: 130 real cities (id, name, admin1, country code,
+lat/lon, population), hand-picked for global spread, generated to both
+`apps/mobile/src/data/cities.json` (source of truth) and
+`supabase/migrations/0009_seed_cities.sql` (`pnpm run seed:cities`,
+drift-checked by `tests/cities-seed.test.ts`, the same pattern `M1-02`'s
+`build:engine` established). Real GeoNames data can replace it in place later
+without touching any consumer — both the seed migration and the client search
+index derive from the one JSON file. Also: "a searchable picker screen
+writing to `profiles.home_lat/home_lon`" reads as a real Supabase write, but
+no Supabase client exists in the mobile app yet and no live project exists to
+test one against (Q-002) — the screen calls an injected `LoftPickerDeps.saveLoft`
+contract instead (mirrors `M1-02`'s `ReleaseDeps` pattern), and
+`app/loft-picker.tsx` wires a placeholder real implementation that always
+fails with the same `t({key:'offline'})` copy a real network failure would
+show. Filed `M1-11` to replace it with a real client once `M1-02`'s pattern
+extends to the mobile app.
+
+---
+
+### [x] M1-04 — The flight card
+
+**Status:** done · **Size:** S · **Depends on:** M1-01
+**Read first:** `packages/flight-sim/src/format.ts`, `docs/PRODUCT.md` §6
+
+**Why:** It is the single most screenshotted element of the original, and it is
+pure presentation over an already-tested function.
+
+**Do:** `🕊 1d 2h away` on one line, `2,446 mi` on the next, origin → destination
+as place names. Text ticks at 1 Hz so the numbers do not jitter.
+
+**Do NOT:**
+- Do not render a percentage, a progress bar, or any speed.
+- Do not fetch anything; the card takes props.
+
+**Acceptance criteria:**
+- [x] renders "13h 13m away" and "2,446 mi" at 40% of a LA to NYC flight
+- [x] renders "arriving" in the final minute
+- [x] contains no speed value anywhere in its output
+- [x] updates once per second, not once per frame
+
+**Touches:** `apps/mobile/src/ui/screens/FlightCard.tsx`,
+`apps/mobile/src/ui/screens/FlightCard.test.tsx`
+
+---
+
+### [ ] M1-05 — The chart: decide the renderer and draw the route
+
+**Status:** split · **Size:** L
+**Depends on:** M0-08, M0-02
+
+**Why:** The map is the product. This is also the item that resolves ADR-007
+from "proposed" to "accepted" or replaces it.
+
+**Resolution note:** too large to start as one item, per `docs/LOOP.md` §2's
+override table. Split (iteration 19) into `M1-12`, `M1-13` and `M1-14`
+below — geometry, renderer decision + static draw, and the flown/dashed split,
+in that order. Each carries its own share of the four acceptance criteria
+originally listed here. `M1-06`'s "Depends on" now points at `M1-14`, the
+last of the three.
+
+---
+
+### [x] M1-12 — Route projection: fit-to-bounds screen coordinates
+
+**Status:** done · **Size:** S · **Depends on:** M0-02
+**Read first:** `packages/flight-sim/src/geo.ts` (`arcSegments`,
+`splitAtAntimeridian`)
+
+**Why:** Split from `M1-05` (see its resolution note) because it was too large
+to start as one item. Before any renderer is chosen, the route needs to become
+screen-space coordinates: `arcSegments()` returns lat/lon segments already
+split at the antimeridian (`M0-12`), but nothing yet turns that into points
+fit to a viewport with consistent padding. This half is pure geometry and does
+not depend on which renderer `M1-13` picks — `react-native-svg`, MapLibre and
+`expo-maps` would all consume the same projected points.
+
+**Do:**
+- A pure function in `packages/flight-sim` (e.g. `project.ts`) taking
+  `arcSegments()`'s output plus a viewport size and a padding ratio, returning
+  one array of `{x, y}` points per input segment — never merging segments, so
+  an antimeridian split never produces a point connecting across the seam.
+- Fit the projected bounds to the viewport with the same padding ratio
+  regardless of route length (a 5 mi hop and a 10,000 mi crossing both get the
+  same visual margin).
+
+**Do NOT:**
+- Do not touch any React/React Native code — this is pure math, testable with
+  plain Jest, no renderer decision required.
+- Do not decide the renderer here — that is `M1-13`.
+
+**Acceptance criteria:**
+- [x] a Tokyo to LA route projects to two separate point arrays with no point
+  connecting across the antimeridian seam
+- [x] a LA to NYC route's projected midpoint sits above the projected chord
+  midpoint
+- [x] the route fits its bounds with the same padding ratio at 5 mi and
+  10,000 mi
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts`
+
+---
+
+### [x] M1-13 — Decide the renderer (ADR-007) and draw the static route
+
+**Status:** done · **Size:** M · **Depends on:** M1-12, M0-08
+**Read first:** `docs/DECISIONS.md` ADR-007
+
+**Why:** Split from `M1-05` (see its resolution note). This is the item that
+resolves ADR-007 from "proposed" to "accepted" or replaces it, and it is also
+the first item that renders anything to the screen this container can
+screenshot.
+
+**Do:**
+- Evaluate `expo-maps` against a bundled-vector-SVG chart (e.g.
+  `react-native-svg`) on: dashed polyline support, New Architecture
+  compatibility, web rendering for screenshots (this container's only
+  verifiable render path — `M0-08`), API keys, and offline behaviour. Record
+  the outcome as an update to ADR-007 in `docs/DECISIONS.md`.
+- Implement `MapCanvas.{ios,android,web}.tsx` behind one `FlightMap`
+  component, drawing the full route from `M1-12`'s projected segments as a
+  single solid polyline per segment.
+- Wire a story into the `M0-08` harness (`app/_dev/[story].tsx`) with a
+  frozen clock so it can be screenshotted deterministically.
+
+**Do NOT:**
+- Do not skip the ADR. This decision is expensive to reverse — it touches the
+  flight screen, the Atlas and the Columbarium.
+- Do not add city labels, roads, or traffic. This is a chart, not Apple Maps.
+- Do not implement the flown/dashed split yet — that is `M1-14`.
+
+**Acceptance criteria:**
+- [x] two consecutive frozen-clock screenshots of the drawn route are
+  byte-identical
+- [x] the rendered component keeps a Tokyo to LA route's two segments visually
+  separated, with no line connecting across the seam
+
+**Resolution note:** ADR-007 said "record the outcome as an update to
+ADR-007" — but `docs/DECISIONS.md`'s own preamble is append-only ("never edit
+or delete an entry — supersede it with a new one"), so the decision landed as
+a new entry, ADR-011, rather than an edit to ADR-007 itself (ADR-007 is left
+exactly as written, and ADR-011's own header notes what it supersedes). The
+decision itself also came out differently than ADR-007's proposal: no
+`MapCanvas.{ios,android,web}.tsx` split, because `react-native-svg` (chosen
+over `expo-maps` specifically because `expo-maps` has no web target — see
+ADR-011) ships one real web target already, so one platform-agnostic
+`FlightMap.tsx` runs on iOS, Android and web unmodified with nothing to
+split.
+
+**Touches:** `docs/DECISIONS.md` (ADR-011),
+`apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`,
+`apps/mobile/app/_dev/[story].tsx` (a new `flight-map` story),
+`apps/mobile/package.json` (`react-native-svg` dependency — new runtime
+dependency, ADR required, satisfied by ADR-011 itself), `pnpm-lock.yaml`,
+`tests/shot.test.ts` (extended with the new story's byte-identical
+screenshot pair, alongside the existing `index` story coverage)
+
+---
+
+### [x] M1-14 — Split the route into flown (solid) and remaining (dashed)
+
+**Status:** done · **Size:** S · **Depends on:** M1-13
+**Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`)
+
+**Why:** Split from `M1-05` (see its resolution note). `PRODUCT.md` §7 and the
+original item's own "Do" line both call for the flown portion of the route to
+render solid and the rest dashed, so the bird's progress is legible on the
+chart itself, not only in the flight card's text.
+
+**Do:**
+- Extend `FlightMap` to take the flight's current fractional progress
+  (derived from `flightStateAt`, never `Date.now()`) and split each projected
+  segment at that fraction into a solid "flown" prefix and a dashed
+  "remaining" suffix.
+
+**Do NOT:**
+- Do not read the ambient clock inside `FlightMap` — progress is a prop,
+  computed by the caller from the server-corrected clock, matching `M1-04`'s
+  pattern for `FlightCard`.
+- Do not add any new visual element (bird marker, labels) — that is `M1-06`.
+
+**Acceptance criteria:**
+- [x] at 40% elapsed, the solid portion covers 40% of the total projected
+  route length
+- [x] a flight whose arrival has passed renders entirely solid
+- [x] a flight that has not yet departed renders entirely dashed
+
+**Resolution note:** the actual split math (`splitAtProgress`) landed in
+`packages/flight-sim/src/project.ts`, not inside `FlightMap.tsx` itself as
+the `Touches` line below originally assumed. `CLAUDE.md`'s layering rule is
+explicit that a component computing something — here, walking a polyline's
+cumulative screen-space length and linearly interpolating a split point —
+belongs in `flight-sim`, not in `apps/mobile`; `FlightMap.tsx` calls it and
+renders the result, computing nothing itself, matching the precedent
+`M1-12`/`M1-13` already set for this same file (`projectSegments`, not
+`FlightMap`, owns the projection math). `apps/mobile/app/_dev/[story].tsx`
+also needed a one-line update (a fixed `progress={0.5}`) since `FlightMap`'s
+`progress` prop is now required — a direct consequence of the "Do" line, not
+scope creep.
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts` (new
+`splitAtProgress`, not in the item's original `Touches` guess — see the
+resolution note), `apps/mobile/src/ui/screens/FlightMap.tsx`,
+`apps/mobile/src/ui/screens/FlightMap.test.tsx`,
+`apps/mobile/app/_dev/[story].tsx` (the `flight-map` dev story now passes a
+fixed `progress`, so it keeps typechecking and its screenshot demonstrates
+the solid/dashed split instead of the all-solid route `M1-13` drew).
+
+---
+
+### [ ] M1-06 — The flight screen
+
+**Status:** split · **Size:** L
+**Depends on:** M1-04, M1-14
+
+**Why:** This is the screenshot people send their friends. It is the entire
+marketing budget.
+
+**Resolution note:** too large to start as one item, per `docs/LOOP.md` §2's
+override table. Split (iteration 26) into `M1-15`, `M1-16` and `M1-17` below —
+the bird's true screen position (pure engine math, and the item that resolves
+the iteration 25 hardening pass's progress-semantics note), the screen itself
+(chart + card + live marker), and the pinch/zoom constraint, in that order.
+Each carries its own share of the five acceptance criteria originally listed
+here, plus one supporting criterion `M1-15` adds for its own determinism
+guarantee.
+
+---
+
+### [x] M1-15 — The bird's true screen position
+
+**Status:** done · **Size:** S · **Depends on:** M1-12
+**Read first:** `packages/flight-sim/src/state.ts` (`flightStateAt`),
+`packages/flight-sim/src/geo.ts` (`interpolate`)
+
+**Why:** Split from `M1-06` (see its resolution note). This is also where the
+iteration 25 hardening pass's unfixed finding gets resolved: `splitAtProgress`
+(`M1-14`) splits the drawn route at a fraction of *projected screen-space
+polyline length*, but `flightStateAt`'s `position` is a real geo-space point
+(`interpolate`'s angular slerp between origin and destination). On a route
+with curvature or an antimeridian split, "40% of pixel length" and "where the
+bird actually is at 40% elapsed" are two different points — invisible until
+now only because nothing has drawn a marker to compare against.
+`docs/PRODUCT.md`'s INV-6 ("the map shows the bird's true position") is about
+exactly this kind of decoupling, so the marker must be projected from
+`flightStateAt`'s own `position`, never re-derived from a screen-space length
+fraction the way `splitAtProgress` is.
+
+**Do:**
+- A pure function in `packages/flight-sim/src/project.ts` (e.g.
+  `projectPoint`) that takes a single `LatLng` (`flightStateAt(plan,
+  now).position`) plus the same segments/viewport/`paddingRatio` that
+  `projectSegments` fits the drawn route to, and returns the point's
+  `ProjectedPoint` in that identical fit — reusing the same scale/origin
+  derivation `projectSegments` already computes, not a second one that could
+  drift from it.
+
+**Do NOT:**
+- Do not touch `FlightMap.tsx`, gestures, or any React/React Native code —
+  this is pure math, testable with plain Jest.
+- Do not change `splitAtProgress`'s own behaviour or tests — `M1-14`'s
+  flown/dashed split stays exactly as shipped; only the marker's own position
+  uses this new function.
+
+**Acceptance criteria:**
+- [x] a bird at 40% of elapsed time on a LA→NYC flight projects within 1% of
+  viewport size of `interpolate(origin, destination, 0.4)`'s own point,
+  projected through the same fit
+- [x] advancing a frozen clock by one hour on a 22-hour flight moves the
+  projected point roughly 4.5% of the route's total screen-space length
+  further along it
+- [x] calling the projector at two different timestamps that are both at or
+  after `arrivesAtMs` returns the identical pinned destination point (arrived,
+  no replay, no drift between calls)
+
+**Resolution note:** `projectSegments`' own scale/origin math was extracted
+into an internal `computeFit` helper (behavior-preserving — verified
+byte-identical against every existing `[M1-12]`/`M1-13]`/`[M1-14]` test) so
+`projectPoint` calls the identical derivation rather than a second one.
+Locating a point within that fit's unwrapped-longitude range (needed for a
+point crossing the antimeridian, e.g. a future Tokyo→LA flight) required one
+new helper, `unwrapLonToFit`, not anticipated by the item's own `Do` line —
+it tries the raw longitude and both neighbouring 360° wraps and keeps
+whichever lands closest to the fit's own center. Self-review
+(`/code-review --effort high`) found a real gap: unlike `projectSegments`,
+`projectPoint` had no empty-`segments` guard, so an empty array would
+silently return `{x: -Infinity, y: -Infinity}` instead of failing loudly —
+fixed by throwing, matching this codebase's own precedent
+(`snap_profile_location` raising rather than nulling an unresolvable
+coordinate), with a regression test.
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts`
+
+---
+
+### [x] M1-16 — The flight screen: chart, card and the live marker
+
+**Status:** done · **Size:** M · **Depends on:** M1-04, M1-14, M1-15
+**Read first:** `apps/mobile/src/ui/screens/FlightCard.tsx` (the required
+`now: () => number` prop and the ref-based 1 Hz interval that survives a
+fresh inline closure every render — the marker's own frame loop needs the
+same care).
+
+**Why:** Split from `M1-06` (see its resolution note). This is the actual
+screen: the chart and the card already exist as components, but nothing yet
+assembles them with a live bird on top.
+
+**Do:** one screen — full-bleed `FlightMap`, the title, `FlightCard`, and a
+bird marker positioned by `M1-15`'s projector — driven by `flightStateAt(plan,
+serverNow())`. The marker updates on a frame loop; the card's text keeps
+`M1-04`'s existing 1 Hz tick. Correct on cold start and after backgrounding:
+every tick recomputes `flightStateAt` from the plan and `serverNow()`, never
+reads a stored or cached progress value. When the OS reduced-motion setting
+is on, throttle the marker's own update loop to 1 Hz instead of a frame loop
+— do not hide the marker, just slow its refresh.
+
+**Do NOT:**
+- Do not implement sending, arrival reveal, or death here — those are `M1-07`
+  and `M1-08`.
+- Do not call `Date.now()` — use the server-corrected clock, matching
+  `FlightCard`'s own required `now` prop.
+- Do not animate a bird that has already landed — an already-arrived flight
+  mounts straight into its resting position at the destination, with no
+  entry animation or easing from elsewhere on the route.
+- Do not implement pinch-to-zoom or a pan/zoom constraint here — that is
+  `M1-17`.
+
+**Acceptance criteria:**
+- [x] a flight whose arrival has passed renders as arrived with no replay —
+  mounting the screen after `arrivesAtMs` shows the marker at rest at the
+  destination on the very first frame, never animating in from the origin
+- [x] with reduced motion on, the bird still updates at 1 Hz
+
+**Resolution note:** the marker overlay (`FlightMap`'s new optional
+`markerPoint` prop, rendered as an SVG `<Circle>`) computes nothing itself —
+`FlightScreen.tsx` is the one place that calls `flightStateAt`, `arcSegments`,
+`projectSegments` and `M1-15`'s `projectPoint`, per `CLAUDE.md`'s layering
+rule. Self-review (`/code-review --effort high`) found two real issues beyond
+the two listed criteria: the route's geometry (`arcSegments`/`projectSegments`)
+was being recomputed from scratch on every animation frame even though it
+never changes for the life of a mounted flight — fixed with `useMemo` keyed
+on the origin/destination/viewport, and the frame loop (and the
+reduced-motion interval) never stopped rescheduling once a flight had
+arrived, burning CPU/battery forever on a position that can no longer
+change — fixed by having the shared `tick()` helper report arrival and
+clear/stop itself, with a regression test proving the interval count drops
+by exactly one once `now()` crosses `arrivesAtMs`. Also caught and fixed: the
+test file's own `PADDING_RATIO` was hand-copied rather than imported from
+`FlightScreen.tsx`, a drift risk fixed by exporting the screen's own constant
+for the test to import instead.
+No real navigation into this screen exists yet (`M1-07` compose/release and
+`M1-08` arrival are still `todo`, and there is no server-time-sync mechanism
+built anywhere in the app), so the new real route
+(`apps/mobile/app/flight-demo.tsx`) is an honest, explicitly-named demo —
+a fixed LA→NYC flight anchored 40% through its journey relative to
+`Date.now()` at mount, the same honest-placeholder precedent `M1-03`'s
+`loft-picker.tsx` already set for a screen with no real backend to wire to
+yet. `Date.now()` there is this route's own concrete choice as the caller
+supplying `FlightScreen`'s required `now` prop, not a violation of the
+component's own "never call `Date.now()` internally" rule.
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx` (a marker overlay),
+a new `apps/mobile/src/ui/screens/FlightScreen.tsx` and
+`FlightScreen.test.tsx`, a new route `apps/mobile/app/flight-demo.tsx`,
+`apps/mobile/app/_dev/[story].tsx` (a new `flight-screen` story),
+`tests/shot.test.ts` (extended with the new story's byte-identical
+screenshot pair)
+
+---
+
+### [x] M1-17 — Constrain the chart's pinch-to-zoom
+
+**Status:** done · **Size:** S · **Depends on:** M1-16
+
+**Why:** Split from `M1-06` (see its resolution note).
+`docs/PRODUCT.md` §9 is explicit that this app never holds a precise
+location; letting a user pinch the chart down to street-level detail would
+make the loft's snapped-to-a-city-centroid privacy promise feel broken even
+though the coordinate itself is still coarse.
+
+**Do:** wire pinch (and pan) gestures onto `FlightMap`'s viewport, clamping
+the maximum zoom so the visible span never drops below 25 km regardless of
+device or route length. Prefer React Native's built-in touch-responder
+APIs over adding a gesture-handling dependency — a new runtime dependency
+here needs an ADR in `docs/DECISIONS.md` in the same commit, per
+`CLAUDE.md`.
+
+**Do NOT:**
+- Do not add any minimum zoom-out constraint beyond what `M1-12`'s existing
+  fit-to-bounds padding already gives — this item only bounds zooming in.
+- Do not let a zoom/pan gesture change what `flightStateAt` reports; the
+  marker's position is unaffected by the viewport the user is looking through.
+
+**Acceptance criteria:**
+- [x] at maximum pinch the visible span is never under 25 km
+
+**Resolution note:** the "how far can we zoom in" question turned out to be
+pure geography, not UI state, so `CLAUDE.md`'s layering rule put it in
+`packages/flight-sim` rather than inline in `FlightMap.tsx` as the item's own
+`Touches` guess assumed: `project.ts` gained `maxZoomForMinVisibleKm`
+(segments, viewport, paddingRatio, minVisibleKm) → the greatest zoom factor
+before the *whole viewport's* visible geographic window (not just the
+route's own bounding box — the padding margin is still on-screen) would
+drop under `minVisibleKm`, using the same `computeFit` `projectSegments`/
+`projectPoint` already share (widened to also expose `minLat`, needed to
+locate the fit's own center). `FlightScreen.tsx` computes it once via
+`useMemo` (`MIN_VISIBLE_KM = 25`, exported alongside the existing
+`PADDING_RATIO`) and hands it to `FlightMap` as a new required `maxZoom`
+prop; the `flight-map` dev story needed the same one-line wiring. `FlightMap`
+itself only clamps a live gesture value against that number — it derives
+nothing.
+
+Pinch (two-finger) and pan (one-finger) both go through one `PanResponder` —
+confirmed, not assumed, to be genuinely simulatable in this container's
+`jest-expo/web` + `@testing-library/react` setup: `react-native-web`
+implements the responder system on top of real `touchstart`/`touchmove` DOM
+events (not React's synthetic `onTouchStart` props), so `fireEvent.touchStart`/
+`touchMove` with a `touches`/`changedTouches` array reproduces genuine
+multi-touch gestures in `FlightMap.test.tsx`, including the exact-zoom and
+never-past-`maxZoom` assertions, without a single manual/visual check.
+
+Self-review (`/code-review --effort high`) found two real correctness gaps
+beyond the listed acceptance criterion: (1) a zoom already in effect was
+never re-clamped if `maxZoom` itself shrank between renders with no new
+gesture (a new, shorter flight; a rotated device) — fixed by re-deriving the
+*displayed* zoom as `clamp(zoom, 1, maxZoom)` on every render rather than
+only inside the gesture handler, regression-tested by pinching in then
+re-rendering with a smaller `maxZoom` and asserting the display drops
+immediately; (2) a pinch starting with both touches at the same point
+divided by a near-zero distance, producing `NaN`/`Infinity` — fixed by
+re-basing the pinch's start distance instead of dividing when it is under a
+1px floor, regression-tested with a coincident-touch pinch start. Also
+applied: reused `@pidge/flight-sim`'s existing `clamp` instead of a second,
+independently-written copy in `FlightMap.tsx`; lazily initialized the
+`PanResponder` (a plain `useRef(PanResponder.create(...))` still evaluates
+and discards that call on every render, and `FlightScreen` re-renders this
+component up to 60 times a second).
+
+No `supabase/`, auth, or RLS touched — no `/security-review` per
+`docs/LOOP.md` §4. No new runtime dependency — `PanResponder` is `react-native`'s
+own built-in touch-responder system, not `react-native-gesture-handler` or
+similar, so no ADR was needed.
+
+**Touches:** `packages/flight-sim/src/project.ts`, `project.test.ts` (new
+`maxZoomForMinVisibleKm`, not in the item's original `Touches` guess — see
+the resolution note), `apps/mobile/src/ui/screens/FlightMap.tsx`,
+`FlightMap.test.tsx`, `apps/mobile/src/ui/screens/FlightScreen.tsx` (wires
+the new `maxZoom` prop), `apps/mobile/app/_dev/[story].tsx` (the
+`flight-map` story now supplies `maxZoom` too).
+
+---
+
+### [x] M1-18 — The marker and route line must not scale with pinch-zoom
+
+**Status:** done · **Size:** S · **Depends on:** M1-17
+**Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
+
+**Why:** `FlightMap`'s `<G transform="...scale(displayZoom)...">` wraps both
+the route `<Polyline>`s and the bird `<Circle>` marker, and neither
+compensates for the enclosing scale — `MARKER_RADIUS` and the polylines'
+`strokeWidth` are fixed pixel constants that get multiplied by `displayZoom`
+along with everything else inside that group. `maxZoomForMinVisibleKm` can
+legitimately return a large factor for a long route on a small viewport
+(confirmed by running the actual formula for a LAX→NYC route on a
+393×700-ish phone viewport: ≈190) — at anywhere near that zoom the marker
+renders at hundreds of pixels' radius and the route line hundreds of pixels
+wide, a solid-colour blob covering the whole screen well before the 25 km
+floor (`PRODUCT.md` §9) is even reached. `M1-06`'s own "Why" calls this
+screen "the screenshot people send their friends" — this bug makes pinching
+in on it, the exact gesture `M1-17` built, break the screen it was built for.
+
+**Do:**
+- Give the route `<Polyline>`s a non-scaling stroke (`react-native-svg`
+  supports SVG's `vectorEffect="non-scaling-stroke"`) so `strokeWidth` stays
+  a constant on-screen size regardless of the group's `scale(...)`.
+- Keep the marker's on-screen radius constant across zoom levels — either an
+  inverse-scaled `r` (`MARKER_RADIUS / displayZoom`) or by projecting the
+  marker outside the scaled `<G>` entirely and applying the zoom/pan
+  transform to its center coordinates instead of to the shape.
+
+**Do NOT:**
+- Do not change `maxZoomForMinVisibleKm` or the 25 km floor itself — this is
+  a rendering-only fix, not a change to how far the user may zoom.
+
+**Acceptance criteria:**
+- [x] at the route's own `maxZoom`, the rendered marker's on-screen radius
+  stays within a small, fixed factor of its unzoomed radius
+- [x] at the route's own `maxZoom`, the rendered route line's on-screen
+  width stays within a small, fixed factor of its unzoomed width
+- [x] existing `[M1-13]`/`[M1-14]`/`[M1-16]`/`[M1-17]` `FlightMap`/
+  `FlightScreen` tests still pass unchanged
+
+**Resolution note:** the marker's `<Circle r={...}>` is inverse-scaled
+(`MARKER_RADIUS / displayZoom`) rather than projected outside the scaled
+`<G>` — the simpler of the two options the item's own "Do" line offered,
+and the group's `translate(pan) translate(center) scale(displayZoom)
+translate(-center)` transform already keeps the marker's *position*
+correct at any zoom, so only its radius needed compensating. The route
+`<Polyline>`s take `vectorEffect="non-scaling-stroke"`, confirmed (not
+assumed) to render as the DOM attribute `vector-effect="non-scaling-stroke"`
+on this repo's web target — an SVG-spec guarantee that the browser itself
+keeps `strokeWidth` a constant on-screen size regardless of an ancestor's
+`scale(...)`, which is why the new `[M1-18]` test for the route line
+asserts the attribute's presence (the mechanism) rather than a computed
+pixel width — jsdom holds attributes, it does not render or measure SVG
+geometry, so nothing in this test suite can observe the *effect* of
+`vector-effect` directly, only that the fix is wired in. The marker
+radius, by contrast, is plain arithmetic on a real attribute value, so
+that test does compute an actual "on-screen radius" (raw `r` × the
+`scale(...)` parsed from the group's `transform`) and asserts it lands
+within 1% of the unzoomed baseline. Verified against the pre-fix code
+before landing: both new tests fail as expected (marker radius reads
+950px at a 190x zoom instead of ~5px; `vector-effect` is absent), then
+pass once the fix is applied.
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`
+
+---
+
+### [x] M1-19 — Reconcile the chart's pan offset when the viewport or route changes
+
+**Status:** done · **Size:** S · **Depends on:** M1-17
+**Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
+
+**Why:** `FlightMap`'s `displayZoom` re-derives from the live `zoom`/`maxZoom`
+every render specifically so a `maxZoom` that shrinks between renders (a new,
+shorter flight; a rotated device) re-clamps immediately with no new gesture
+required — `M1-17`'s own fix for exactly this class of staleness. `pan` has
+no equivalent: it is a raw pixel offset set once per gesture and never
+reconciled against a changed `segments`/`viewport`. A device rotation after
+the user has panned changes `viewport.width`/`height`, which changes
+`FlightScreen`'s `computeFit`-derived scale/origin for the same route, but
+`FlightMap` keeps applying the old `pan.x`/`pan.y` on top of the newly-fit
+coordinates — the route or marker can end up shifted off-screen or oddly
+framed with no gesture having caused it.
+
+**Do:** reset (or otherwise reconcile) `pan` — and, if the same gap applies,
+`zoom` — whenever `segments`/`viewport` change to a genuinely different
+route or view, so the resting view after such a change is always the correct
+fit-to-bounds framing rather than the previous gesture's stale offset.
+
+**Do NOT:**
+- Do not change how `pan`/`zoom` behave *during* a gesture — this is only
+  about what happens when the inputs change with no gesture in progress.
+
+**Acceptance criteria:**
+- [x] a viewport change (simulating a device rotation) after a pan gesture
+  leaves the route framed within the new viewport's bounds, not shifted off
+  it
+- [x] existing `[M1-17]` pinch/pan tests still pass unchanged
+
+**Resolution note:** `FlightMap` now tracks the `segments`/`viewport` it last
+settled at in a ref, compared by value — `viewport.width`/`viewport.height`,
+not the object reference, matching `FlightScreen`'s own established pattern
+(`useMemo(..., [viewport.width, viewport.height])`) for the same reason:
+`app/flight-demo.tsx` constructs a fresh `viewport={{ width, height }}`
+object literal on every one of its own re-renders (`useWindowDimensions()`),
+even when the values have not changed. `segments` is compared by reference,
+which is safe because `FlightScreen` memoizes it on the route and viewport
+dimensions, so it is stable across this component's own per-frame
+re-renders and only a genuinely new reference when the route or viewport
+actually changes. When either value changes, `pan` resets to `{x:0, y:0}`
+and `zoom` resets to `MIN_ZOOM` — the resting fit-to-bounds view — rather
+than only `pan` as the item's own "Do" line first proposed; the "if the same
+gap applies" clause does apply, since a stale non-1 zoom carried across a
+route/viewport change is just as much the previous gesture's offset as a
+stale pan is.
+
+Self-review (`/code-review --effort high`) found a real gap beyond the two
+listed criteria: the reset cleared `pan`/`zoom` state but never invalidated
+`gestureStartRef`, so a gesture still physically in progress at the moment
+of the change (finger down, no `onPanResponderRelease`/`onPanResponderTerminate`)
+would have its very next move re-add the gesture's *pre-change* `start.pan`
+snapshot on top of the just-reset view, immediately undoing the reset the
+user would have seen for one frame. Fixed by nulling `gestureStartRef` in
+the same reconciliation branch, forcing `onPanResponderMove`'s existing
+touch-count-change rebase path to re-anchor from the freshly-reset `pan`
+instead. Verified directly: reverting just that one line reproduces the bug
+(the regression test's mid-gesture move reads back the stale pre-change
+offset instead of the reset view), confirming the fix and its test actually
+cover the gap rather than passing by coincidence.
+
+**Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`
+
+---
+
+### [x] M1-07 — Compose and release
+
+**Status:** done · **Size:** M · **Depends on:** M1-02, M1-03
+
+**Why:** Releasing a bird must feel like a decision, not like hitting send. The
+irreversibility is stated up front because that is the deal.
+
+**Do:** a 280-character note field with the counter rendered as ink; a
+pre-release confirmation stating the due time and that it cannot be recalled; a
+~1.2 s release ceremony; optimistic navigation to the flight screen.
+
+**Do NOT:**
+- Do not add drafts, attachments, or a recall affordance.
+- Do not let a double-tap release two birds.
+
+**Acceptance criteria:**
+- [x] typing a 281st character is impossible
+- [x] a double-tap on release calls the edge function exactly once
+- [x] a network failure preserves the note text and shows the in-fiction copy
+- [x] no handler named recall, cancel, unsend or edit exists in the flow
+
+**Resolution note:** no real Supabase client exists anywhere in the mobile
+app yet (`M1-11`, blocked on Q-002) and no conversation/contacts screen
+exists to navigate here from, so — matching `M1-03`'s own precedent for the
+same gap — `ComposeScreen` takes an injected `ComposeDeps.release(body)`
+contract rather than calling a real Edge Function, and `app/compose.tsx`
+wires an honest placeholder (`realComposeDeps`) that always rejects with a
+message pointing at `M1-11`, plus a placeholder recipient/distance (`Ana`,
+3936 km — the same LA-NYC fixture `flight-demo.tsx` already uses) rather
+than a real resolved recipient. "Optimistic navigation to the flight
+screen" is wired as literally as the app currently allows: `onReleased`
+calls `router.replace('/flight-demo')`, the only flight screen route that
+exists. The pre-release confirmation's "due time" is a genuine preview —
+`effectiveSpeedKmh`/`durationMs`/`formatEta` run for real against the given
+`distanceKm`, the same physics the server will actually apply at release —
+not a second, independently-worded estimate; it does not gate or reach
+`deps.release` and the server still rolls the real flight (ADR-001). The
+double-tap guard is a `useRef` boolean checked and set synchronously at the
+top of `startRelease`, so it holds even against two taps landing before any
+re-render, not only against the confirm button disappearing once the phase
+changes. The "no recall/cancel/unsend/edit" criterion is proven by a static
+scan (`ComposeScreen.test.tsx`) over declared identifier names in
+`ComposeScreen.tsx`, `app/compose.tsx` and `compose-deps.ts` with comments
+stripped first — a substring match, not a `\b`-bounded one, since self-review
+(`/code-review --effort high`) found the first version's bounded regex could
+not actually catch a realistic compound name like `handleCancel` or
+`editNote`, only the bare word itself. Self-review also found `previewDueIn`
+re-ran the speed/duration physics on every keystroke; fixed with a
+`useMemo` keyed on `distanceKm`. No `supabase/`, auth, or RLS touched — no
+`/security-review` per `docs/LOOP.md` §4. No new runtime dependency.
+
+**Touches:** `apps/mobile/src/ui/screens/ComposeScreen.tsx`,
+`ComposeScreen.test.tsx`, `apps/mobile/src/data/compose-deps.ts`,
+`apps/mobile/app/compose.tsx`, `apps/mobile/src/ui/copy/strings.ts`,
+`strings.test.ts` (new `compose*` copy variants — this item had no
+`Touches:` line of its own; noted per `docs/LOOP.md` §3).
+
+---
+
+### [ ] M1-08 — Arrival, and the death that nobody sees
+
+**Status:** todo · **Size:** L (**split this before starting**)
+**Depends on:** M1-16, M1-07 · **Blocked by:** Q-002 for the Realtime half
+
+**Why:** The arrival is the payoff for 22 hours of waiting. If it is late,
+silent, or ordinary, the product fails.
+
+**Do:** subscribe to flight resolution over Realtime; land the bird on the
+chart, resolve the card, then *reveal* the note as a scene rather than pushing a
+row into a chat log. On the sender's side, a lost bird gets the memorial copy
+from PRODUCT.md §5 — name, place, time, and that the note was not recovered.
+
+**Do NOT:**
+- Do not show the recipient anything at all for a lost message.
+- Do not fast-forward a bird that landed while the app was closed.
+
+**Acceptance criteria:**
+- [ ] the recipient's client reveals the note within 2 seconds of resolution
+- [ ] ten consecutive polls before resolution all return a null body
+- [ ] a cold start after arrival shows the arrived state with no animation
+- [ ] the loss screen names the place and time and never shows the text
+
+---
+
+### [ ] M1-09 — The demo harness
+
+**Status:** todo · **Size:** M · **Depends on:** M1-08
+
+**Why:** A 22-hour flight cannot be tested in real time. This is the
+highest-leverage 40 lines in the repo.
+
+**Do:** a `TIME_SCALE` clock (default 1, `epoch + (real - epoch) × scale`) that
+every time read in the app goes through; a seeded two-user script; a runner that
+plays a full LA→NYC flight in under a minute; a recording checklist.
+
+**Do NOT:**
+- Do not let `TIME_SCALE` be settable in a production build. Gate it behind
+  `EXPO_PUBLIC_E2E`.
+
+**Acceptance criteria:**
+- [ ] with the scale at 1440 a 22-hour flight completes in 55 ± 2 seconds
+- [ ] the scale is ignored unless the E2E flag is set
+- [ ] the seeded script produces the same fate on every run
+
+---
+
+### [ ] M1-11 — Wire a real Supabase client into the mobile app
+
+**Status:** blocked · **Size:** M · **Depends on:** M1-02 · **Blocked by:** Q-002
+
+**Why:** Filed by `M1-03` (iteration 17). The loft picker screen calls an
+injected `LoftPickerDeps.saveLoft(city)` contract rather than a real Supabase
+write, because no `@supabase/supabase-js` client exists anywhere in
+`apps/mobile` yet — `M1-02` only added one to the Edge Function, a different
+runtime — and there is no live Supabase project to test one against (Q-002).
+`app/loft-picker.tsx`'s real implementation always rejects today, so every
+save shows the same `t({key:'offline'})` copy a genuine network failure would.
+Every future screen that reads or writes real data (M1-06 onward) will hit
+this same gap.
+
+**Do:**
+- Add `@supabase/supabase-js` to `apps/mobile` (ADR required — new runtime
+  dependency) and a thin client factory reading `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+  from Expo config, matching how `index.ts`'s service-role client is built.
+- Real auth session handling (sign in, session persistence) — scope this
+  precisely once written; it may itself be too large for one item.
+- Replace `apps/mobile/src/data/loft-picker-deps.ts`'s placeholder with a real
+  `saveLoft` that upserts `profiles.home_lat`/`home_lon`.
+
+**Do NOT:**
+- Do not stub a fake Supabase client that "succeeds" without a real project —
+  that would be strictly worse than today's honest failure.
+
+**Acceptance criteria:**
+- [ ] blocked on Q-002 — no live project or credentials exist to test against

@@ -1,0 +1,143 @@
+# Questions for the human
+
+The loop writes here when it hits a decision only a person can make: product
+ambiguity, credentials, spend, or a conflict with `docs/PRODUCT.md`. A hard bug
+or an unfamiliar API is **not** a question — that is the job.
+
+To answer: fill in `**Answer:**` and change `[open]` to `[answered]`. The next
+iteration picks it up on the next firing; there is nothing to restart.
+
+If a question sits open for more than 24 hours and its recommendation is safe,
+the loop takes its own recommendation, records an ADR, and proceeds. It degrades
+toward progress, not toward deadlock.
+
+---
+
+## Q-001 — [open] — iteration 0 — item M0-07
+
+**Question:** What is the app actually called?
+
+**Why blocking:** It goes in `app.json`, the bundle identifier, the Expo slug
+and every user-facing string. Changing it after those exist is a chore, and the
+bundle id in particular is painful to change once a build has been submitted.
+
+**Constraint:** It must not be **Carrier Pidge** — that is the existing App
+Store app (id 6762161637) whose mechanics this project reproduces. Reusing the
+name invites a takedown and makes the work unpublishable.
+
+**Options:**
+(a) `Loft` — the current working name. Short, in-fiction, the place a homing
+    pigeon returns to. Likely crowded as a bare App Store name.
+(b) `Homing` — names the mechanic and the feeling at once.
+(c) `Palomar` — Spanish for pigeon loft; distinctive in English-language stores.
+(d) Something else entirely.
+
+**My recommendation if you do not answer:** (a) `Loft` as the internal product
+name, with the App Store display name deferred to `M4`. Nothing ships before
+then, so this only needs to be settled once a build is submitted.
+
+**Answer:**
+
+---
+
+## Q-002 — [open] — iteration 0 — item M1-08
+
+**Question:** Which Supabase project should the loop deploy migrations to, and
+where do its credentials live?
+
+**Why blocking:** Auth flows, Realtime authorization and real `pg_cron`
+behaviour cannot be tested against PGlite (see ADR-006). Validating them needs a
+real project. The loop has no way to create one or to hold a secret.
+
+**What is needed:** a free-tier Supabase project, with `SUPABASE_URL`,
+`SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_ACCESS_TOKEN` set
+as GitHub Actions repository secrets.
+
+**My recommendation if you do not answer:** the loop keeps building against
+PGlite and defers every item that requires a live backend, noting the growing
+gap in `docs/JOURNAL.md`. Work continues; it just cannot verify auth or Realtime
+until this exists.
+
+**Answer:**
+
+---
+
+## Q-003 — [open] — iteration 1 — infrastructure
+
+**Question:** Can GitHub Actions be enabled for this repository?
+
+**Why it matters:** The `verify` workflow is queued and then fails in about two
+seconds with no runner assigned (`runner_id: 0`, empty `runner_name`), no step
+output, and a 404 on its logs. That is GitHub declining to schedule the job, not
+a failing build — three runs behaved identically, including on the very first
+push.
+
+**Likely causes:** Actions disabled for the repository or the account, or a
+spending limit of zero. Both are in repository/account settings and cannot be
+fixed by any commit.
+
+**Impact if left alone:** low but real. `pnpm run verify` runs in every
+iteration and is the actual gate, so the loop keeps working and keeps the branch
+green. What is lost is the independent second check — an iteration that somehow
+leaves a broken commit would not be caught by anything outside itself.
+
+**Note:** `docs/LOOP.md` §1 was amended in iteration 1 so the loop recognises a
+never-scheduled job and does **not** treat it as work. Without that, it would
+have spent all 60 iterations trying to fix something outside the repository.
+
+**My recommendation if you do not answer:** carry on. Local `verify` is a strong
+gate on its own, and CI will start working the moment the setting changes, with
+nothing to redeploy.
+
+**Answer:**
+
+---
+
+## Q-004 — [answered] — iteration 5 — infrastructure — **RESOLVED 2026-08-20**
+
+**Question:** Can the environment's configured git source revision be changed
+from `refs/heads/master` to the working branch (or to `main`)?
+
+**Why blocking:** This is the last uncontrolled variable, and the loop is
+disabled until it is resolved. Three Routine firings produced nothing and left
+no trace. A session created by hand with an explicit `source_revision` pointing
+at the working branch did the entire job — clone, install, `verify` green,
+push — in under four minutes. The environment is `env_017bAB2EkLZzvTxv8oNdRajs`,
+and its stored revision is `refs/heads/master`, **a branch that has never
+existed in this repository**: it only has `main` and the working branch.
+
+**The evidence that it dies early:** `docs/LOOP.md` §2 makes a session push a
+*claim* commit before implementing anything — seconds of work. No claim commit
+ever appeared. So the session never reached §2; it failed in §0/§1, while
+syncing or orienting. Every mitigation shipped so far (repo-discovery fallback,
+`pnpm install`, denial resilience, the git/pnpm allowlist) applies to §3 onward,
+which is why none of them changed the outcome.
+
+**What was already ruled out** — see `docs/DIAGNOSTIC.md`: container, network,
+npm registry, git remote, toolchain, permission surface.
+
+**What is needed:** in the environment's settings, point the source at
+`claude/app-development-loop-szg7yj` (or `main`). This cannot be done from
+inside the repository, and `create_trigger` exposes no `source_revision`
+parameter to override it per-Routine.
+
+**My recommendation if you do not answer:** leave the Routine disabled. Firing
+it again without changing this would burn containers to reproduce a known
+failure. The bootstrap in this branch stands on its own and is unaffected.
+
+**To resume once fixed:** `update_trigger({trigger_id:
+"trig_01E64KH7PJ17htCeFnrcpqkf", enabled: true})`. Nothing else needs rebuilding.
+
+**Answer:**
+
+**Answer (2026-08-20):** resolved. The Routine gained an explicit
+`sources: [{git_repository: {url: ".../messager-pidge"}}]` entry at 20:35 UTC —
+it previously had none and so inherited the environment's `refs/heads/master`.
+It fired at 20:42:56 and the session worked: it synced, claimed `M0-07`, built
+the Expo shell, fixed two blockers, ran `verify` green and landed the item in 32
+minutes. The diagnosis in this question was correct — the cause was how sessions
+were sourced, not anything in the repository.
+
+**Standing note for future agents:** if firings ever go silent again, check the
+Routine's `sources` before touching `docs/LOOP.md`. Three protocol revisions and
+a permission allowlist produced no change; one source entry fixed it.
