@@ -136,6 +136,56 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [pan, setPan] = useState({ x: 0, y: 0 });
 
+  // A snapshot of where the gesture currently in progress started, reset
+  // whenever the number of active touches changes — so lifting or adding a
+  // finger mid-gesture (pinch to pan, or back) never causes a jump. Declared
+  // ahead of the `[M1-19]` reconciliation below so a route/viewport change
+  // can also invalidate a gesture already in flight, not just the state it
+  // would otherwise resume from.
+  const gestureStartRef = useRef<{
+    touchCount: number;
+    distance: number;
+    point: ProjectedPoint;
+    zoom: number;
+    pan: { x: number; y: number };
+  } | null>(null);
+
+  // `[M1-19]` Reconcile pan/zoom back to the resting fit-to-bounds view
+  // whenever `segments` or `viewport` become a genuinely different route or
+  // view — a device rotation, or a new flight — rather than keep applying a
+  // gesture's stale offset on top of newly-fit coordinates. Compared by
+  // value, not reference: `FlightScreen` memoizes `segments` on the route and
+  // viewport dimensions (so its reference is stable across this component's
+  // own per-frame re-renders), but callers like `flight-demo.tsx` construct a
+  // fresh `viewport` object literal on every one of *their* re-renders even
+  // when `width`/`height` have not changed, which is exactly `FlightScreen`'s
+  // own established pattern (`useMemo(..., [viewport.width, viewport.height])`)
+  // for the same reason. On mount this compares against `null` and always
+  // "changes" the ref, but `pan`/`zoom` already start at their resting values,
+  // so the `setPan`/`setZoom` calls below are skipped rather than firing a
+  // wasted extra render.
+  //
+  // Also invalidates `gestureStartRef`: a gesture can still be in progress
+  // (finger down, no `onPanResponderRelease`/`onPanResponderTerminate`) at
+  // the moment `segments`/`viewport` change — without this, the next move of
+  // that same, still-active gesture would keep computing its delta from the
+  // pre-change `start.pan` snapshot and immediately re-apply the very offset
+  // this reset just cleared. Nulling it forces `onPanResponderMove`'s own
+  // touch-count-change branch to re-`startGesture` from the just-reset `pan`,
+  // the same rebase it already performs whenever a finger is added or lifted.
+  const restingViewRef = useRef<{ segments: typeof segments; width: number; height: number } | null>(null);
+  if (
+    restingViewRef.current === null ||
+    restingViewRef.current.segments !== segments ||
+    restingViewRef.current.width !== viewport.width ||
+    restingViewRef.current.height !== viewport.height
+  ) {
+    restingViewRef.current = { segments, width: viewport.width, height: viewport.height };
+    if (pan.x !== 0 || pan.y !== 0) setPan({ x: 0, y: 0 });
+    if (zoom !== MIN_ZOOM) setZoom(MIN_ZOOM);
+    gestureStartRef.current = null;
+  }
+
   // Re-clamped every render, not just inside the gesture handler below — if
   // `maxZoom` itself shrinks (a new, shorter flight; a rotated device) while
   // a larger zoom is already in effect, the displayed zoom must drop with
@@ -155,17 +205,6 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
   zoomRef.current = displayZoom;
   const panRef = useRef(pan);
   panRef.current = pan;
-
-  // A snapshot of where the gesture currently in progress started, reset
-  // whenever the number of active touches changes — so lifting or adding a
-  // finger mid-gesture (pinch to pan, or back) never causes a jump.
-  const gestureStartRef = useRef<{
-    touchCount: number;
-    distance: number;
-    point: ProjectedPoint;
-    zoom: number;
-    pan: { x: number; y: number };
-  } | null>(null);
 
   // Lazily initialized: `PanResponder.create` builds a full handler object
   // graph, and a plain `useRef(PanResponder.create(...))` would still

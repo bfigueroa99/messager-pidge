@@ -1186,9 +1186,9 @@ pass once the fix is applied.
 
 ---
 
-### [ ] M1-19 — Reconcile the chart's pan offset when the viewport or route changes
+### [x] M1-19 — Reconcile the chart's pan offset when the viewport or route changes
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-17
+**Status:** done · **Size:** S · **Depends on:** M1-17
 **Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
 
 **Why:** `FlightMap`'s `displayZoom` re-derives from the live `zoom`/`maxZoom`
@@ -1213,10 +1213,41 @@ fit-to-bounds framing rather than the previous gesture's stale offset.
   about what happens when the inputs change with no gesture in progress.
 
 **Acceptance criteria:**
-- [ ] a viewport change (simulating a device rotation) after a pan gesture
+- [x] a viewport change (simulating a device rotation) after a pan gesture
   leaves the route framed within the new viewport's bounds, not shifted off
   it
-- [ ] existing `[M1-17]` pinch/pan tests still pass unchanged
+- [x] existing `[M1-17]` pinch/pan tests still pass unchanged
+
+**Resolution note:** `FlightMap` now tracks the `segments`/`viewport` it last
+settled at in a ref, compared by value — `viewport.width`/`viewport.height`,
+not the object reference, matching `FlightScreen`'s own established pattern
+(`useMemo(..., [viewport.width, viewport.height])`) for the same reason:
+`app/flight-demo.tsx` constructs a fresh `viewport={{ width, height }}`
+object literal on every one of its own re-renders (`useWindowDimensions()`),
+even when the values have not changed. `segments` is compared by reference,
+which is safe because `FlightScreen` memoizes it on the route and viewport
+dimensions, so it is stable across this component's own per-frame
+re-renders and only a genuinely new reference when the route or viewport
+actually changes. When either value changes, `pan` resets to `{x:0, y:0}`
+and `zoom` resets to `MIN_ZOOM` — the resting fit-to-bounds view — rather
+than only `pan` as the item's own "Do" line first proposed; the "if the same
+gap applies" clause does apply, since a stale non-1 zoom carried across a
+route/viewport change is just as much the previous gesture's offset as a
+stale pan is.
+
+Self-review (`/code-review --effort high`) found a real gap beyond the two
+listed criteria: the reset cleared `pan`/`zoom` state but never invalidated
+`gestureStartRef`, so a gesture still physically in progress at the moment
+of the change (finger down, no `onPanResponderRelease`/`onPanResponderTerminate`)
+would have its very next move re-add the gesture's *pre-change* `start.pan`
+snapshot on top of the just-reset view, immediately undoing the reset the
+user would have seen for one frame. Fixed by nulling `gestureStartRef` in
+the same reconciliation branch, forcing `onPanResponderMove`'s existing
+touch-count-change rebase path to re-anchor from the freshly-reset `pan`
+instead. Verified directly: reverting just that one line reproduces the bug
+(the regression test's mid-gesture move reads back the stale pre-change
+offset instead of the reset view), confirming the fix and its test actually
+cover the gap rather than passing by coincidence.
 
 **Touches:** `apps/mobile/src/ui/screens/FlightMap.tsx`, `FlightMap.test.tsx`
 

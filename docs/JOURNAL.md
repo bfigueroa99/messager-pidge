@@ -3432,3 +3432,105 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. `M1-19` (the pan-offset reconciliation bug,
   filed alongside this item at iteration 30) remains `todo`, depends only
   on `M1-17` (done), and is next in line ahead of `M1-07`.
+
+## Iteration 33 — 2026-09-05 — M1-19
+
+- **CI:** the previous commit's `verify` workflow run again showed the
+  never-scheduled signature `Q-003` documents — a 3-second `created_at`→
+  `completed_at` span (`101025558517`, run `33873722387`) and a 404 on
+  `get_job_logs`'s actual log content. Not this iteration's item; `Q-003` is
+  already open and unchanged.
+- **Selection:** `iteration(33) - last_hardening_iteration(30) = 3 < 5`, not
+  hardening. `iteration(33) - last_audit_iteration(31) = 2 < 10`, not audit.
+  Topmost unblocked `todo` in `ROADMAP.md` is `M1-19` (depends on `M1-17`,
+  done) — filed alongside `M1-18` at iteration 30 and flagged in iteration
+  32's own journal entry as next in line. Size S, no split needed.
+- **Verify:** typecheck ok · lint ok · 216 tests ok (floor raised 215 → 216,
+  +4 new `[M1-19]` tests) · flight-sim coverage unchanged (99.07%/90.9%
+  aggregate, both above the 90%/85% gate — this item touched only
+  `apps/mobile`, not `packages/flight-sim`) · `gate:roadmap` ok (27 done, 7
+  pending) · `gate:tests` ok (floor raised to 216).
+- **What landed:** `FlightMap.tsx` now tracks the `segments`/`viewport` it
+  last settled at in a ref (`restingViewRef`). Whenever either becomes
+  genuinely different from that snapshot — compared by *value* for
+  `viewport.width`/`viewport.height` (not object reference: `flight-demo.tsx`
+  constructs a fresh `{width, height}` literal on every one of its own
+  `useWindowDimensions()`-triggered re-renders even when the values are
+  unchanged, exactly the reason `FlightScreen` itself already keys its own
+  `useMemo`s off the property values rather than the object) and by
+  *reference* for `segments` (safe because `FlightScreen` memoizes it on the
+  route and viewport dimensions, so the reference is stable across this
+  component's own per-frame re-renders and only genuinely changes for a real
+  route/viewport change) — both `pan` reset to `{x: 0, y: 0}` and `zoom`
+  reset to `MIN_ZOOM`, the resting fit-to-bounds view. Four new `[M1-19]`
+  tests in `FlightMap.test.tsx`: one drives a one-finger pan to a nonzero
+  offset, then rerenders with a rotated (width/height swapped) viewport with
+  no new gesture, and asserts the pan snaps back to `{0, 0}`; a second
+  combines a pinch (5x zoom) and a pan, then rerenders with a genuinely new
+  `segments` reference (as `FlightScreen`'s own `useMemo` would hand this
+  component for a new flight) and asserts both zoom and pan reset; a third
+  reuses the `M1-17` re-clamp scenario (same `segments`/`viewport`, only
+  `maxZoom` shrinks) tagged `[M1-19]` to prove the reconciliation does not
+  mistake an unchanged route/view for a genuine change and wrongly reset to
+  zoom 1 instead of re-clamping to the new ceiling; a fourth (added after
+  self-review, see below) drives a still-in-progress one-finger pan through
+  a mid-gesture viewport change and asserts the gesture's next move measures
+  its delta from the just-reset pan rather than re-adding its pre-change
+  offset. Verified the first two directly against the pre-fix code before
+  landing (both failed: pan stayed at its pre-change offset instead of
+  resetting). Self-review (`/code-review --effort high`) found a real gap
+  beyond the item's own two acceptance criteria: the reset cleared `pan`/
+  `zoom` state but never invalidated `gestureStartRef`, so a gesture already
+  in progress at the moment of the change (finger still down, no
+  `onPanResponderRelease`/`onPanResponderTerminate`) would have its very next
+  move re-add the gesture's *pre-change* `start.pan` snapshot on top of the
+  just-reset view — reproduced directly (mid-gesture move read back the
+  stale offset instead of the reset one) before fixing it by nulling
+  `gestureStartRef` in the same reconciliation branch, which forces
+  `onPanResponderMove`'s existing touch-count-change rebase path to
+  re-anchor from the freshly-reset `pan` instead. The fourth test's own two
+  assertions were each separately confirmed to fail against the
+  pre-invalidation code (first at `{50, 30}` instead of `{0, 0}` for the
+  rebase step) before the `gestureStartRef.current = null` line landed. No
+  `supabase/`, auth, or RLS touched — no `/security-review` per
+  `docs/LOOP.md` §4. No new runtime dependency.
+- **Surprises for the next agent:**
+  - **Comparing a `viewport` prop by object reference is the wrong check in
+    this codebase, even though comparing a `segments` prop by reference is
+    the right one — the two need genuinely different comparisons, not a
+    single "did the prop change" helper.** `FlightScreen` memoizes
+    `segments` (`useMemo(..., [rawSegments, fit])`), so its reference really
+    is stable unless the route or viewport actually changed — reference
+    equality is a correct and cheap check. But `viewport` itself is *not*
+    memoized anywhere in the chain: `flight-demo.tsx` passes
+    `viewport={{ width, height }}` as a fresh literal on every one of its own
+    re-renders (triggered by `useWindowDimensions()`, which itself fires on
+    more than just an actual rotation — e.g. some platforms re-report
+    identical dimensions on unrelated layout events). Using reference
+    equality for `viewport` the same way as `segments` would have made this
+    item's own fix fire a reset on renders where nothing visible changed at
+    all. `FlightScreen`'s own `useMemo` dependency arrays
+    (`[fit, viewport.width, viewport.height]`) already encode the right
+    answer — worth checking, for any future prop comparison in this
+    component tree, whether upstream memoizes the *value* or only ever
+    constructs a fresh object carrying it.
+  - **A React state reset triggered by comparing props during render (the
+    "adjusting state when a prop changes" pattern — calling `setState`
+    directly in the render body, guarded by a ref snapshot, rather than in a
+    `useEffect`) composes correctly with `displayZoom`'s pre-existing
+    render-time re-derivation, but does *not* automatically compose with a
+    `PanResponder`'s gesture-tracking ref.** `zoom`/`pan` state resets
+    immediately and visibly (no extra frame of the stale view, unlike an
+    effect-based reset which would commit one frame late), but
+    `gestureStartRef` is mutated imperatively by the gesture handlers
+    themselves and is invisible to React's render cycle — nothing about
+    resetting `pan`/`zoom` state also resets *that*, which is exactly why
+    self-review caught a real bug here rather than a hypothetical one.
+    Worth remembering for any future "reset this component's local UI state
+    when a prop changes" fix in a component that also holds gesture (or
+    similar imperative-ref) state alongside the React state being reset:
+    check every ref that snapshots "where we started," not just the state
+    values a naive read of the bug report would point at.
+- **Follow-ups filed:** none. The next unblocked `todo` items in order are
+  `M1-07` (compose and release) and `M1-08`/`M1-09`/`M1-11` (blocked or
+  depending on `M1-07`/`M1-08`).

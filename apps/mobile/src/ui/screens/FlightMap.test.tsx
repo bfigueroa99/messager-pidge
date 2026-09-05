@@ -46,6 +46,16 @@ function zoomOf(container: HTMLElement): number {
   return Number(match[1]);
 }
 
+/** The leading `translate(pan.x, pan.y)` in the zoom group's transform — the
+ * raw pan offset, before the fixed centering/scale translates that follow it. */
+function panOf(container: HTMLElement): { x: number; y: number } {
+  const group = container.querySelector('[data-testid="flight-map-zoom-group"]');
+  const transform = group?.getAttribute('transform') ?? '';
+  const match = /^translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(transform);
+  if (!match) throw new Error(`no leading translate(...) found in transform: "${transform}"`);
+  return { x: Number(match[1]), y: Number(match[2]) };
+}
+
 describe('FlightMap', () => {
   it('[M1-13] keeps a Tokyo to LA route\'s two segments visually separated, with no line connecting across the seam', () => {
     const segments = arcSegments(TOKYO, LAX);
@@ -339,5 +349,121 @@ describe('FlightMap marker and route line at high zoom', () => {
     fireEvent.touchStart(target, touchEvent([touch(140, 100), touch(160, 100)]));
     fireEvent.touchMove(target, touchEvent([touch(-860, 100), touch(1160, 100)]));
     expect(zoomOf(container)).toBe(10);
+  });
+});
+
+describe('FlightMap pan/zoom reconciliation on route or viewport change', () => {
+  it("[M1-19] a viewport change (simulating a device rotation) after a pan gesture leaves the route framed within the new viewport's bounds, not shifted off it", () => {
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const { container, getByTestId, rerender } = render(
+      <FlightMap segments={projected} viewport={VIEWPORT} progress={0.4} maxZoom={10} />,
+    );
+    const target = getByTestId('flight-map');
+
+    // A one-finger pan (no pinch) — moves 50px right and 30px down.
+    fireEvent.touchStart(target, touchEvent([touch(150, 100)]));
+    fireEvent.touchMove(target, touchEvent([touch(200, 130)]));
+    expect(panOf(container)).toEqual({ x: 50, y: 30 });
+
+    // Simulate a device rotation: the viewport's dimensions swap, with no
+    // new gesture in progress and the same route (segments unchanged in
+    // this isolated FlightMap-level test, since projecting a rotated
+    // viewport is FlightScreen's own concern, not this component's).
+    const rotatedViewport: Viewport = { width: VIEWPORT.height, height: VIEWPORT.width };
+    rerender(<FlightMap segments={projected} viewport={rotatedViewport} progress={0.4} maxZoom={10} />);
+
+    // The stale pan from the old viewport must not persist on top of the
+    // newly-fit coordinates — the resting view is the fit-to-bounds framing,
+    // pan back at (0, 0).
+    expect(panOf(container)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('[M1-19] a route change (a new segments reference) after a pinch and pan resets both zoom and pan to the resting view', () => {
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const { container, getByTestId, rerender } = render(
+      <FlightMap segments={projected} viewport={VIEWPORT} progress={0.4} maxZoom={10} />,
+    );
+    const target = getByTestId('flight-map');
+
+    fireEvent.touchStart(target, touchEvent([touch(140, 100), touch(160, 100)]));
+    fireEvent.touchMove(target, touchEvent([touch(100, 100), touch(200, 100)])); // 5x pinch
+    expect(zoomOf(container)).toBeCloseTo(5, 5);
+    // Drop to one finger without an intervening release — the touch count
+    // changing mid-gesture is itself what `onPanResponderMove` rebases from
+    // (matching the real multi-touch case: lifting a finger is a move event,
+    // not a fresh responder grant), so this first one-finger move only
+    // re-bases and contributes no delta of its own.
+    fireEvent.touchMove(target, touchEvent([touch(150, 100)]));
+    expect(panOf(container)).toEqual({ x: 0, y: 0 });
+    fireEvent.touchMove(target, touchEvent([touch(180, 120)])); // now pan by (30, 20)
+    expect(panOf(container)).toEqual({ x: 30, y: 20 });
+
+    // A genuinely new route: a fresh (but distinct) projected-segments array,
+    // as FlightScreen would hand this component after its own `useMemo`
+    // recomputes for a new flight.
+    const newRouteSegments = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    rerender(<FlightMap segments={newRouteSegments} viewport={VIEWPORT} progress={0} maxZoom={10} />);
+
+    expect(zoomOf(container)).toBe(1);
+    expect(panOf(container)).toEqual({ x: 0, y: 0 });
+  });
+
+  it('[M1-19] a maxZoom-only re-render (identical segments/viewport) does not reset an in-progress zoom — the M1-17 re-clamp scenario is unaffected', () => {
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const { container, getByTestId, rerender } = render(
+      <FlightMap segments={projected} viewport={VIEWPORT} progress={0.4} maxZoom={10} />,
+    );
+    const target = getByTestId('flight-map');
+
+    fireEvent.touchStart(target, touchEvent([touch(140, 100), touch(160, 100)]));
+    fireEvent.touchMove(target, touchEvent([touch(100, 100), touch(200, 100)])); // 5x
+    expect(zoomOf(container)).toBeCloseTo(5, 5);
+
+    // Same segments/viewport reference and values — only maxZoom shrinks.
+    // M1-19's reconciliation must not mistake this for a genuinely different
+    // route/view and reset the zoom to 1 instead of re-clamping it to 2.
+    rerender(<FlightMap segments={projected} viewport={VIEWPORT} progress={0.4} maxZoom={2} />);
+    expect(zoomOf(container)).toBe(2);
+  });
+
+  it('[M1-19] a route/viewport change mid-gesture does not let the still-active gesture re-apply its stale pre-change offset on its next move', () => {
+    const NYC = { lat: 40.7128, lon: -74.006 };
+    const projected = projectSegments(arcSegments(LAX, NYC), VIEWPORT, PADDING_RATIO);
+    const { container, getByTestId, rerender } = render(
+      <FlightMap segments={projected} viewport={VIEWPORT} progress={0.4} maxZoom={10} />,
+    );
+    const target = getByTestId('flight-map');
+
+    // A one-finger pan gesture, still in progress — no touchEnd/terminate,
+    // matching a real finger still down on the glass.
+    fireEvent.touchStart(target, touchEvent([touch(150, 100)]));
+    fireEvent.touchMove(target, touchEvent([touch(200, 130)]));
+    expect(panOf(container)).toEqual({ x: 50, y: 30 });
+
+    // The route/viewport changes mid-gesture (e.g. a device rotation while
+    // the user's finger is still on the glass). The reconciliation snaps the
+    // displayed pan back to the resting view immediately.
+    const rotatedViewport: Viewport = { width: VIEWPORT.height, height: VIEWPORT.width };
+    rerender(<FlightMap segments={projected} viewport={rotatedViewport} progress={0.4} maxZoom={10} />);
+    expect(panOf(container)).toEqual({ x: 0, y: 0 });
+
+    // The same gesture continues (same touch count, no new touchStart). Its
+    // very first move after the reconciliation is itself the rebase (mirrors
+    // the touch-count-change case elsewhere in this file): the finger has not
+    // left (210, 140... well, still at its pre-change position of (200, 130)
+    // at this instant), so this move contributes no delta of its own — it
+    // only re-anchors `gestureStartRef` to the just-reset pan of (0, 0)
+    // instead of the stale pre-change start.pan of (50, 30).
+    fireEvent.touchMove(target, touchEvent([touch(200, 130)]));
+    expect(panOf(container)).toEqual({ x: 0, y: 0 });
+
+    // The finger then actually moves by (10, 10) from that rebased anchor —
+    // proving the delta is measured from the just-reset pan, never re-adding
+    // the gesture's pre-change (50, 30) offset on top of it.
+    fireEvent.touchMove(target, touchEvent([touch(210, 140)]));
+    expect(panOf(container)).toEqual({ x: 10, y: 10 });
   });
 });
