@@ -1188,7 +1188,7 @@ pass once the fix is applied.
 
 ### [ ] M1-19 — Reconcile the chart's pan offset when the viewport or route changes
 
-**Status:** todo · **Size:** S · **Depends on:** M1-17
+**Status:** in-progress · **Size:** S · **Depends on:** M1-17
 **Found by:** `/code-review --effort high`, iteration 30 (HARDENING)
 
 **Why:** `FlightMap`'s `displayZoom` re-derives from the live `zoom`/`maxZoom`
