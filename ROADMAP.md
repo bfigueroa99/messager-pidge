@@ -1314,7 +1314,7 @@ re-ran the speed/duration physics on every keystroke; fixed with a
 
 ### [ ] M1-08 — Arrival, and the death that nobody sees
 
-**Status:** in-progress · **Size:** L (**split this before starting**)
+**Status:** split · **Size:** L
 **Depends on:** M1-16, M1-07 · **Blocked by:** Q-002 for the Realtime half
 
 **Why:** The arrival is the payoff for 22 hours of waiting. If it is late,
@@ -1329,7 +1329,24 @@ from PRODUCT.md §5 — name, place, time, and that the note was not recovered.
 - Do not show the recipient anything at all for a lost message.
 - Do not fast-forward a bird that landed while the app was closed.
 
-**Acceptance criteria:**
+**Resolution note:** too large to start as one item, per `docs/LOOP.md` §2's
+override table. Split (iteration 36) into `M1-20`, `M1-21` and `M1-22` below —
+the resolution-watcher contract (the client-side mechanism that learns a
+flight has resolved and what it may reveal before then), the recipient's
+arrival-reveal scene, and the sender's loss/memorial screen, in that order.
+Each carries its own share of the four acceptance criteria originally listed
+here. Like `M1-03`/`M1-07`/`M1-11` before it, the real Realtime subscription
+this item's own "Do" line asks for needs a live Supabase project that does
+not exist yet (Q-002, still open) — `M1-20` follows the same honest-placeholder
+precedent those items set rather than waiting on it: an injected
+`ResolutionDeps` contract the recipient/sender screens can be built and
+tested against today, with a real `subscribe`/`poll` implementation deferred
+to whenever `M1-11` unblocks. None of the three split items are themselves
+blocked by Q-002 for this reason — only the eventual real wiring is, and
+that gap is `M1-11`'s to close, not a new item. `M1-09`'s own "Depends on"
+now points at `M1-21` and `M1-22`, the last two of the three below.
+
+**Acceptance criteria (original, now split below):**
 - [ ] the recipient's client reveals the note within 2 seconds of resolution
 - [ ] ten consecutive polls before resolution all return a null body
 - [ ] a cold start after arrival shows the arrived state with no animation
@@ -1337,9 +1354,115 @@ from PRODUCT.md §5 — name, place, time, and that the note was not recovered.
 
 ---
 
+### [ ] M1-20 — The resolution-watcher contract: never reveal before release
+
+**Status:** todo · **Size:** S · **Depends on:** M1-16, M1-07
+**Read first:** `docs/PRODUCT.md` INV-5, `supabase/migrations/0007_visibility_ignores_reaper.sql`
+
+**Why:** Split from `M1-08` (see its resolution note). Before either the
+recipient's reveal scene (`M1-21`) or the sender's loss screen (`M1-22`) can
+be built, both need one shared client-side mechanism that watches a flight
+for resolution (arrived vs. lost) without ever surfacing an outcome, a body,
+or even the fact of death/survival before the flight has actually resolved.
+INV-5 is enforced server-side by RLS gated on `now()` (`M0-10`); this item is
+the client half — a contract that cannot leak the secret early no matter how
+it is polled, matching the honest-placeholder precedent `M1-03` (`LoftPickerDeps`),
+`M1-07` (`ComposeDeps`) and `M1-11` set for a screen with no live backend yet.
+
+**Do:**
+- An injected `ResolutionDeps` contract (e.g. `watch(flightId, onResolved):
+  () => void` plus/or `poll(flightId): Promise<ResolutionResult | null>`)
+  that a caller can subscribe to or poll, returning `null`/pending for an
+  unresolved flight and only ever returning a body or outcome once actually
+  resolved.
+- A real, honest placeholder implementation (mirrors `app/compose.tsx`'s
+  `realComposeDeps`) that has nothing live to call yet and says so — never a
+  fake success.
+- A fake/injectable test implementation that lets `M1-21`/`M1-22`'s own
+  tests drive a flight through "unresolved → resolved" deterministically,
+  matching `FlightScreen`'s existing `now`-prop-driven determinism pattern.
+
+**Do NOT:**
+- Do not implement a real Supabase Realtime subscription or `fetch` call —
+  there is no live project to test one against (Q-002). That is `M1-11`'s.
+- Do not touch `supabase/`, RLS, or the reaper — the server-side guarantee
+  already exists and is out of scope here.
+
+**Acceptance criteria:**
+- [ ] ten consecutive polls before resolution all return a null body
+
+**Touches:** `apps/mobile/src/data/resolution-deps.ts`,
+`apps/mobile/src/data/resolution-deps.test.ts`
+
+---
+
+### [ ] M1-21 — The arrival reveal scene
+
+**Status:** todo · **Size:** M · **Depends on:** M1-20, M1-16
+
+**Why:** Split from `M1-08` (see its resolution note). The recipient's
+payoff for 22 hours of waiting: the bird lands on the chart, the card
+resolves, and the note is *revealed* as a scene — not pushed into a chat log
+like an ordinary message notification.
+
+**Do:**
+- A screen/scene, driven by `M1-20`'s `ResolutionDeps`, that sits on top of
+  `FlightScreen` (`M1-16`) and reveals the note once (and only once)
+  resolution arrives.
+- On mount after the flight has already resolved (cold start), render
+  straight into the arrived state with no entry animation — the same
+  no-replay guarantee `M1-16`'s own marker already gives INV-6, applied here
+  to the reveal itself.
+
+**Do NOT:**
+- Do not show anything to the recipient for a flight that resolved as lost
+  — that is invisible to them entirely (`M1-22` is sender-only).
+- Do not fast-forward or replay a flight that landed while the app was
+  closed.
+- Do not call `Date.now()` directly — take `now`/the resolution result as
+  props/deps, matching `FlightScreen`'s and `FlightCard`'s existing pattern.
+
+**Acceptance criteria:**
+- [ ] the recipient's client reveals the note within 2 seconds of resolution
+- [ ] a cold start after arrival shows the arrived state with no animation
+
+**Touches:** `apps/mobile/src/ui/screens/ArrivalScreen.tsx`,
+`ArrivalScreen.test.tsx`, `apps/mobile/src/ui/copy/strings.ts`
+
+---
+
+### [ ] M1-22 — The loss screen: the memorial the sender alone sees
+
+**Status:** todo · **Size:** S · **Depends on:** M1-20
+
+**Why:** Split from `M1-08` (see its resolution note). `docs/PRODUCT.md` §5's
+tone table gives the exact copy shape for a death: name, place, time, and
+that the note was not recovered — and §8/INV-2 require that this is the
+sender's alone; the recipient never learns the message existed.
+
+**Do:**
+- A screen, driven by `M1-20`'s `ResolutionDeps`, shown only to the sender
+  when a flight resolves as lost: the bird's name, where it fell, when, and
+  that the note was not recovered — never the note's text, which the server
+  has already hard-deleted (`M0-05`/`M0-09`).
+
+**Do NOT:**
+- Do not render this screen, or anything derived from it, for the
+  recipient under any circumstance.
+- Do not display the note's text anywhere on this screen — it no longer
+  exists server-side to display.
+
+**Acceptance criteria:**
+- [ ] the loss screen names the place and time and never shows the text
+
+**Touches:** `apps/mobile/src/ui/screens/LossScreen.tsx`,
+`LossScreen.test.tsx`, `apps/mobile/src/ui/copy/strings.ts`
+
+---
+
 ### [ ] M1-09 — The demo harness
 
-**Status:** todo · **Size:** M · **Depends on:** M1-08
+**Status:** todo · **Size:** M · **Depends on:** M1-21, M1-22
 
 **Why:** A 22-hour flight cannot be tested in real time. This is the
 highest-leverage 40 lines in the repo.

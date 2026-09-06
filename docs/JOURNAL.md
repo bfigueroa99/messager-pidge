@@ -3799,3 +3799,89 @@ knowledge survives a context reset.
     concrete future consumer (Atlas, Columbarium, `M1-08`'s arrival screen)
     still hasn't materialized by then.
 - **Follow-ups filed:** none.
+
+## Iteration 36 — 2026-09-06 — SPLIT
+
+- **Outcome:** done
+- **CI:** the tip's `verify` runs before this iteration's push (`bc6b1a4` —
+  both the `push` run `34001275778` and the `pull_request` run `34001277434`)
+  again showed `Q-003`'s never-scheduled signature. Confirmed directly rather
+  than assumed: `get_job_logs(run_id: 34001277434, failed_only: true)`
+  returned `{"error": "failed to download log content for job ...: HTTP
+  404"}` for the single `verify` job — a 404 on real log content despite a
+  `conclusion` of `"failure"`, the same tell every prior iteration has
+  logged. Not this iteration's item; `Q-003` is already open and unchanged.
+- **Selection:** `iteration(36) - last_hardening_iteration(35) = 1 < 5`, not
+  hardening. `iteration(36) - last_audit_iteration(31) = 5 < 10`, not audit.
+  Topmost `todo` item with all dependencies done: `M1-08` (`M1-16` and
+  `M1-07` both `done`) — but it is size `L`, so per `docs/LOOP.md` §2's
+  override table this iteration's job is to split it, not implement it.
+- **What landed:** split `M1-08` ("Arrival, and the death that nobody sees")
+  into three: `M1-20` (the resolution-watcher contract — an injected
+  `ResolutionDeps` the recipient/sender screens can be built and tested
+  against without a live Supabase project), `M1-21` (the recipient's
+  arrival-reveal scene) and `M1-22` (the sender's loss/memorial screen),
+  matching how `M1-05` and `M1-06` were split at iterations 19 and 26. The
+  original item's 4 acceptance criteria were distributed across the three:
+  `M1-20` gets "ten consecutive polls before resolution all return a null
+  body" (the shared mechanism both other items depend on for correctness);
+  `M1-21` gets "reveals the note within 2 seconds of resolution" and "a cold
+  start after arrival shows the arrived state with no animation"; `M1-22`
+  gets "the loss screen names the place and time and never shows the text".
+  `M1-08` itself is now `**Status:** split` with a resolution note pointing
+  at the three, `**Acceptance criteria (original, now split below)**`
+  keeping the original four for traceability. `M1-09`'s own `Depends on` was
+  updated from `M1-08` to `M1-21, M1-22`, since those are the two items that
+  actually finish the work `M1-09` needs before it can build the demo
+  harness.
+  - **The Q-002/Realtime blocker was the main judgment call.** `M1-08`'s own
+    "Do" line says "subscribe to flight resolution over Realtime," which
+    needs a live Supabase project that does not exist (`Q-002`, still open).
+    Rather than marking any of the three new items `blocked` (the way
+    `M1-11` is), they follow the precedent `M1-03` and `M1-07` already set
+    for this exact gap: build the real UI/logic against an injected
+    `ResolutionDeps` contract with an honest placeholder implementation
+    (never a fake success), and defer the real Realtime wiring to whenever
+    `M1-11` unblocks. This keeps all three items genuinely startable today
+    instead of stalling three more items behind `Q-002` the way a literal
+    reading of "subscribe over Realtime" would.
+  - Chose `M1-20` (the contract) as a dependency of both `M1-21` and `M1-22`
+    rather than duplicating a "watch for resolution" mechanism inside each
+    screen — the recipient reveal and the sender memorial both need to learn
+    the same fact (a specific flight resolved, and how) from the same
+    source, and INV-5's "never reveal before resolution" guarantee is much
+    easier to keep true in one place than two.
+- **Verify:** typecheck ok · lint ok · 226 tests ok (floor unchanged at
+  226 — a split adds no code, so no new tests were expected or written) ·
+  flight-sim coverage 99.08%/90.9% aggregate (unchanged, both above the
+  90%/85% gate) · `gate:roadmap` ok (29 done, 8 pending — up from 5, the 3
+  new split items) · `gate:tests` ok (floor unchanged at 226). No
+  `supabase/`, auth, or RLS touched — no `/security-review` per
+  `docs/LOOP.md` §4. No new runtime dependency, no ADR. No `/code-review`
+  run: `git diff --stat` after the split shows only `ROADMAP.md` changed, no
+  source code to review, matching how `M1-05`'s and `M1-06`'s own splits
+  were landed.
+- **Surprises for the next agent:**
+  - **A split iteration's `gate:roadmap` output includes a second,
+    unrelated-looking `gate:roadmap FAILED` block in `pnpm run verify`'s
+    combined output — that is a fixture test, not a real gate failure.**
+    `tests/check-roadmap-tests.test.ts` runs the actual `check-roadmap-tests.mjs`
+    script against a deliberately-broken fixture file (`M9-01 "Fixture
+    item"`) to prove the gate *catches* an uncovered checkbox, and Jest
+    prints that subprocess's stdout inline with everything else. The real
+    gate's own verdict is the separate `gate:roadmap ok — 29 item(s) done
+    and evidenced, 8 pending` line further down, from the actual
+    `gate:roadmap` script step, not the Jest test run. Worth remembering
+    before ever treating that fixture's printed failure as a real one and
+    trying to "fix" `M9-01` — it does not exist in `ROADMAP.md`.
+  - **Splitting a blocked-half item does not require marking the split
+    children `blocked`, if enough of the item is buildable against an
+    honest placeholder.** `M1-08`'s "Do" line named a specific blocked
+    mechanism (Realtime), but the actual UI/logic built on top of it is not
+    itself blocked — the same reasoning `M1-03`/`M1-07` already used, just
+    applied here at split time instead of at landing time. Worth checking
+    for this shape (a partially-blocked item, not a wholly-blocked one)
+    before defaulting to `blocked` on every child of a split whose parent
+    carried a `**Blocked by:**` note.
+- **Follow-ups filed:** none — `M1-20`, `M1-21` and `M1-22` are the
+  follow-ups. The next unblocked `todo` item (by roadmap order) is `M1-20`.
