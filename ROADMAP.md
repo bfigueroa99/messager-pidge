@@ -1314,7 +1314,7 @@ re-ran the speed/duration physics on every keystroke; fixed with a
 
 ### [ ] M1-08 — Arrival, and the death that nobody sees
 
-**Status:** todo · **Size:** L (**split this before starting**)
+**Status:** in-progress · **Size:** L (**split this before starting**)
 **Depends on:** M1-16, M1-07 · **Blocked by:** Q-002 for the Realtime half
 
 **Why:** The arrival is the payoff for 22 hours of waiting. If it is late,
