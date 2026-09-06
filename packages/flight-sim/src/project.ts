@@ -302,6 +302,19 @@ export function screenMidpoint(a: ProjectedPoint, b: ProjectedPoint): ProjectedP
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+/**
+ * The radius to draw a shape at so it keeps a constant `baseRadius` on-screen
+ * size inside a group scaled by `zoom` (`FlightMap`'s bird marker, drawn
+ * inside a `<G transform="...scale(zoom)...">`) — the inverse of the group's
+ * own scale, so the group's multiplication cancels back out to `baseRadius`.
+ * Exported so this stays pure, tested geometry rather than a division
+ * `FlightMap` performs inline, per `CLAUDE.md`'s layering rule (the same
+ * reasoning `screenDistance`/`screenMidpoint` were extracted for).
+ */
+export function unscaledRadius(baseRadius: number, zoom: number): number {
+  return baseRadius / zoom;
+}
+
 function segmentLength(segment: readonly ProjectedPoint[]): number {
   let length = 0;
   for (let i = 1; i < segment.length; i++) length += screenDistance(segment[i - 1]!, segment[i]!);

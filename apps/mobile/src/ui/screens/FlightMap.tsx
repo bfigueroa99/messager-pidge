@@ -7,6 +7,7 @@ import {
   screenDistance,
   screenMidpoint,
   splitAtProgress,
+  unscaledRadius,
   type ProjectedPoint,
   type Viewport,
 } from '@pidge/flight-sim';
@@ -292,7 +293,7 @@ export function FlightMap({ segments, viewport, progress, markerPoint, maxZoom }
               testID="bird-marker"
               cx={markerPoint.x}
               cy={markerPoint.y}
-              r={MARKER_RADIUS / displayZoom}
+              r={unscaledRadius(MARKER_RADIUS, displayZoom)}
               fill={COLORS.bird}
             />
           )}

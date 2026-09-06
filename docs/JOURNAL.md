@@ -3656,3 +3656,146 @@ knowledge survives a context reset.
   depends on `M1-16`/`M1-07`, `M1-07` now done — `M1-08` itself is still
   partly blocked on Q-002 for its Realtime half, per its own roadmap entry).
   `M1-11` (a real Supabase client) remains blocked on Q-002.
+
+## Iteration 35 — 2026-09-06 — HARDENING
+
+- **Outcome:** done
+- **CI:** the tip's most recent `verify` runs before this iteration's push
+  (`231ee99`, both the `push` and `pull_request` triggers, runs `33966389149`
+  and `33966390852`) again showed `Q-003`'s never-scheduled signature: `409404`
+  on `get_job_logs`'s actual log content despite a `conclusion` of `"failure"`
+  and, this time, a longer-than-usual 39-second `created_at`→`completed_at`
+  span on the push-triggered run (versus the usual 2-4 seconds) — the same
+  variability iteration 32's own journal entry already flagged (that one saw
+  39 seconds too). The reliable tell stays the 404 on real log content, not
+  the duration or the `conclusion` field, matching every prior iteration's
+  finding. Not this iteration's item; `Q-003` is already open and unchanged.
+- **Selection:** `iteration(35) - last_hardening_iteration(30) = 5 >= 5` — the
+  hardening override fires, ahead of checking the topmost `todo` (`M1-08`,
+  size `L`, would otherwise need splitting) per `docs/LOOP.md` §2's override
+  table. `iteration(35) - last_audit_iteration(31) = 4 < 10`, not an audit.
+  HARDENING per `docs/LOOP.md` §6.
+- **Verify:** typecheck ok · lint ok · 226 tests ok (floor raised 224 → 226,
+  +2 new `[M1-18]` tests) · flight-sim coverage 99.08%/90.9% aggregate
+  (unchanged, both above the 90%/85% gate) · `gate:roadmap` ok (29 done, 5
+  pending, unchanged) · `gate:tests` ok (floor raised to 226).
+- **What landed:** worked `docs/LOOP.md` §6's checklist against the diff
+  accumulated since the last hardening pass (`b2e5590..231ee99`, covering
+  iteration 31's AUDIT and `M1-18`/`M1-19`/`M1-07`):
+  1. Ticked-without-a-test criteria: none — `gate:roadmap` already ok.
+  2. Dead code (`npx knip`): the same already-triaged false positives every
+     prior pass has logged (Edge Function entry points, script-only modules,
+     `expo-font`, the phantom `expo-updates` dependency, `jest.config.js`'s
+     `projects` shorthand), plus `tokens.ts`/`typography.ts`'s `RADII`,
+     `LINE_HEIGHT_RATIO` and 6 exported type aliases — still unused even now
+     that `M1-07` (the iteration those were previously flagged as "waiting
+     on") has landed. Confirmed directly (grepped `apps/mobile` for each
+     name) that none of them are consumed anywhere. Judged not dead code:
+     `M1-01`'s own "Do" line asked for an exhaustive tokens catalogue
+     (colours, spacing, radii, durations) built *before* every future
+     consumer exists — the same call made at iterations 5, 10, 15, 20, 25 and
+     30 for this exact finding. Left alone again; flagging here again in case
+     a future audit wants to reconsider once more of `M1` ships without ever
+     touching them.
+  3. `/simplify` (4 parallel agents — reuse, simplification, efficiency,
+     altitude — against the `b2e5590..231ee99` diff, scoped to the 5 files
+     that diff actually touches). Applied:
+     - **Reuse:** `LoftPicker.tsx` (`M1-03`) and `ComposeScreen.tsx` (`M1-07`)
+       each independently declared byte-identical `screen`/`error`
+       `StyleSheet` objects. Extracted to a new
+       `apps/mobile/src/ui/theme/styles.ts` (`sharedStyles`); both screens
+       now import and use it instead of their own copies. Confirmed
+       byte-identical before extracting, and confirmed every reference to
+       the deleted `styles.screen`/`styles.error` keys was updated in both
+       files.
+     - **Altitude:** `FlightMap.tsx`'s `M1-18` marker-radius zoom
+       compensation (`MARKER_RADIUS / displayZoom`) was a one-line
+       arithmetic formula computed inline in the component — the same class
+       of screen-space math `screenDistance`/`screenMidpoint` were already
+       extracted from this exact file into `packages/flight-sim/src/project.ts`
+       for, per `CLAUDE.md`'s layering rule and that extraction's own
+       docstring ("a component computing this itself would be the kind of
+       math `CLAUDE.md`'s layering rule reserves for this package"). Added
+       `unscaledRadius(baseRadius, zoom)` to `project.ts` (re-exported
+       through `index.ts`'s existing `export * from './project'`), with two
+       new `[M1-18]` unit tests (`zoom: 1` returns the base radius unchanged;
+       `zoom: 190` — the item's own cited LAX→NYC-on-a-phone figure —
+       matches `baseRadius / zoom` to 10 decimal places). `FlightMap.tsx`
+       now calls it instead of the inline division.
+     - **Skipped, not a false-positive dedup this time but a genuine
+       disagreement:** the simplification agent flagged `ComposeScreen.tsx`'s
+       `useMemo(() => previewDueIn(distanceKm), [distanceKm])` as
+       unnecessary, since `distanceKm` never changes for the screen's life
+       and the underlying computation is cheap arithmetic. Rejected: that
+       exact memo was added by `M1-07`'s *own* self-review (see this
+       journal's iteration 34 entry) specifically because `previewDueIn` was
+       re-running the speed/duration physics on every keystroke before the
+       fix — removing it now would silently reintroduce the identical
+       problem that fix closed, even though no test currently pins
+       "`distanceKm` is stable, so this must not recompute on every render"
+       as an assertion. A finding that would undo a previously-diagnosed and
+       tested fix needs more than "the memo is technically unnecessary if
+       nothing changes" to justify reverting it.
+     - **Skipped, judged not worth the abstraction:** the same agent flagged
+       `ComposeScreen.tsx`'s three near-identical `Pressable`/`Text` button
+       blocks (composing-release, confirm-release, keep-writing) as
+       copy-paste worth extracting into a shared `ReleaseButton` component.
+       Real but low-value duplication confined to one file, three call
+       sites — left as three similar lines rather than introducing a new
+       component for it, matching this repo's own stated preference for
+       avoiding premature abstraction.
+     - Reuse/simplification/efficiency agents found nothing else in scope;
+       the efficiency agent in particular confirmed the `M1-18`/`M1-19`
+       hot-path code (the 60fps `restingViewRef` reconciliation, the
+       `vectorEffect` attribute, the marker-radius division) introduces no
+       redundant per-frame work — the reconciliation bails out in four cheap
+       comparisons unless a route/viewport genuinely changed, verified
+       against `FlightScreen.tsx`'s own `useMemo` deps.
+  4. Coverage: aggregate unchanged at 99.08%/90.9%, both above gate; the two
+     new `[M1-18]` tests cover `unscaledRadius`'s only two branches
+     (`zoom === 1` is not actually a distinct branch, but both call shapes
+     are exercised) so the newly-added function itself is fully covered, not
+     merely riding the aggregate.
+  5. `any`/`@ts-ignore`/`TODO`/`FIXME`: grepped the real source tree
+     directly — none found, same as every prior hardening pass.
+  6. Dependencies without an ADR: none — no `package.json`/`pnpm-lock.yaml`
+     change since the last hardening pass.
+  - Self-review (`/code-review --effort high`) run against this pass's own
+    diff (the `sharedStyles` extraction and the `unscaledRadius` extraction):
+    no findings. Traced that `zoom` is always `>= REST_ZOOM` (1) via the
+    existing `clamp(zoom, MIN_ZOOM, maxZoom)` before `unscaledRadius` ever
+    sees it, so no division-by-zero path was introduced.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Surprises for the next agent:**
+  - **Running the four `/simplify` review angles as genuinely parallel
+    background agents (rather than four sequential passes, or one agent
+    asked to cover all four angles) worked cleanly and is worth repeating.**
+    Each agent came back with a tightly-scoped, non-overlapping set of
+    findings — reuse found the style duplication, altitude found the
+    misplaced marker-radius math, efficiency confirmed the hot path is
+    clean, simplification found the two lower-value/rejected items above —
+    and nothing needed reconciling between them (contrast iteration 30's
+    self-review, which found two findings that turned out to duplicate that
+    same iteration's own `/simplify` fixes; running the four angles as one
+    parallel batch up front, before any fixes land, avoids that
+    duplicate-finding problem entirely rather than merely detecting it
+    afterward).
+  - **A `/simplify` finding can be technically correct about the code in
+    isolation and still be wrong to apply, when the code in question is the
+    fix for a previously-diagnosed bug and the finding's premise (an input
+    that "never changes") is exactly the assumption the original bug
+    violated in practice (every keystroke).** Worth checking a flagged
+    "unnecessary memo"/"unnecessary guard" against the item's own journal
+    history before removing it — the absence of a test pinning the
+    performance characteristic does not mean the characteristic was never a
+    real, previously-fixed problem.
+  - `RADII`/`LINE_HEIGHT_RATIO`/the six unused theme type exports have now
+    survived six consecutive hardening passes (iterations 5, 10, 15, 20, 25,
+    30, and now 35) as a deliberate "not dead code, just not consumed yet"
+    call. Worth an explicit decision at the next `AUDIT` iteration (36 is
+    unlikely; `iteration(36) - last_audit_iteration(31) = 5 < 10`) about
+    whether `M1-01`'s forward-built surface should ever be trimmed if a
+    concrete future consumer (Atlas, Columbarium, `M1-08`'s arrival screen)
+    still hasn't materialized by then.
+- **Follow-ups filed:** none.

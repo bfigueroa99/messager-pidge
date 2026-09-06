@@ -7,6 +7,7 @@ import type { City } from '../../data/cities';
 import { t } from '../copy/strings';
 import { COLORS, SPACING } from '../theme/tokens';
 import { FONT_FAMILIES, FONT_SIZES } from '../theme/typography';
+import { sharedStyles } from '../theme/styles';
 
 /**
  * Persists the chosen city. The real implementation writes
@@ -63,7 +64,7 @@ export function LoftPicker({ deps, cities = CITIES }: LoftPickerProps) {
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={sharedStyles.screen}>
       <Text style={styles.title}>{t({ key: 'loftPickerTitle' })}</Text>
       <Text style={styles.privacyNote}>{t({ key: 'loftPickerPrivacyNote' })}</Text>
       <TextInput
@@ -75,7 +76,7 @@ export function LoftPicker({ deps, cities = CITIES }: LoftPickerProps) {
         autoCorrect={false}
         autoCapitalize="none"
       />
-      {status.kind === 'error' ? <Text style={styles.error}>{t({ key: 'offline' })}</Text> : null}
+      {status.kind === 'error' ? <Text style={sharedStyles.error}>{t({ key: 'offline' })}</Text> : null}
       {query.trim().length > 0 && results.length === 0 ? (
         <Text style={styles.noResults}>{t({ key: 'loftPickerNoResults' })}</Text>
       ) : null}
@@ -97,11 +98,6 @@ export function LoftPicker({ deps, cities = CITIES }: LoftPickerProps) {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: COLORS.paper,
-    padding: SPACING.md,
-  },
   title: {
     color: COLORS.ink,
     fontFamily: FONT_FAMILIES.dispatch,
@@ -123,12 +119,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
-    marginBottom: SPACING.sm,
-  },
-  error: {
-    color: COLORS.alarm,
-    fontFamily: FONT_FAMILIES.dispatch,
-    fontSize: FONT_SIZES.footnote,
     marginBottom: SPACING.sm,
   },
   noResults: {

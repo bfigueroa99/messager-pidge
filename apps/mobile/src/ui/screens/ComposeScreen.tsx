@@ -5,6 +5,7 @@ import { DEFAULT_CONDITIONS, durationMs, effectiveSpeedKmh, formatEta } from '@p
 import { t } from '../copy/strings';
 import { COLORS, DURATIONS_MS, SPACING } from '../theme/tokens';
 import { FONT_FAMILIES, FONT_SIZES } from '../theme/typography';
+import { sharedStyles } from '../theme/styles';
 
 /**
  * PRODUCT.md §6: "Message length | 280 chars". Mirrored in
@@ -125,9 +126,9 @@ export function ComposeScreen({ deps, recipientName, distanceKm, onReleased }: C
   };
 
   return (
-    <View style={styles.screen}>
+    <View style={sharedStyles.screen}>
       <Text style={styles.title}>{t({ key: 'composeTitle', recipientName })}</Text>
-      {offline ? <Text style={styles.error}>{t({ key: 'offline' })}</Text> : null}
+      {offline ? <Text style={sharedStyles.error}>{t({ key: 'offline' })}</Text> : null}
       <TextInput
         style={styles.input}
         value={note}
@@ -166,22 +167,11 @@ export function ComposeScreen({ deps, recipientName, distanceKm, onReleased }: C
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: COLORS.paper,
-    padding: SPACING.md,
-  },
   title: {
     color: COLORS.ink,
     fontFamily: FONT_FAMILIES.dispatch,
     fontSize: FONT_SIZES.title2,
     marginBottom: SPACING.md,
-  },
-  error: {
-    color: COLORS.alarm,
-    fontFamily: FONT_FAMILIES.dispatch,
-    fontSize: FONT_SIZES.footnote,
-    marginBottom: SPACING.sm,
   },
   input: {
     color: COLORS.ink,

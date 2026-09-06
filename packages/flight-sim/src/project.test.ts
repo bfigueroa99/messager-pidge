@@ -10,6 +10,7 @@ import {
   screenDistance,
   screenMidpoint,
   splitAtProgress,
+  unscaledRadius,
   type ProjectedPoint,
 } from './project';
 import type { LatLng } from './types';
@@ -324,5 +325,15 @@ describe('screenDistance and screenMidpoint', () => {
 
   it('[M1-17] screenMidpoint sits exactly halfway between two points', () => {
     expect(screenMidpoint({ x: 10, y: 20 }, { x: 30, y: 0 })).toEqual({ x: 20, y: 10 });
+  });
+});
+
+describe('unscaledRadius', () => {
+  it('[M1-18] returns the base radius unchanged at zoom 1', () => {
+    expect(unscaledRadius(5, 1)).toBe(5);
+  });
+
+  it('[M1-18] shrinks the radius in proportion to the zoom factor, so a scaled group renders it back at the base radius', () => {
+    expect(unscaledRadius(5, 190)).toBeCloseTo(5 / 190, 10);
   });
 });
