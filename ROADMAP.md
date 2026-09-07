@@ -1396,9 +1396,9 @@ it is polled, matching the honest-placeholder precedent `M1-03` (`LoftPickerDeps
 
 ---
 
-### [ ] M1-21 — The arrival reveal scene
+### [x] M1-21 — The arrival reveal scene
 
-**Status:** in-progress · **Size:** M · **Depends on:** M1-20, M1-16
+**Status:** done · **Size:** M · **Depends on:** M1-20, M1-16
 
 **Why:** Split from `M1-08` (see its resolution note). The recipient's
 payoff for 22 hours of waiting: the bird lands on the chart, the card
@@ -1423,11 +1423,35 @@ like an ordinary message notification.
   props/deps, matching `FlightScreen`'s and `FlightCard`'s existing pattern.
 
 **Acceptance criteria:**
-- [ ] the recipient's client reveals the note within 2 seconds of resolution
-- [ ] a cold start after arrival shows the arrived state with no animation
+- [x] the recipient's client reveals the note within 2 seconds of resolution
+- [x] a cold start after arrival shows the arrived state with no animation
+
+**Resolution note:** `strings.ts` needed no change — the `'arrival'` copy
+variant ("A pigeon has arrived from {senderName}.") already existed from
+`M1-01`'s exhaustive catalogue and was unused until now. `ArrivalScreen`
+wraps `FlightScreen` (`M1-16`) rather than replacing it: it polls
+`M1-20`'s `ResolutionDeps.poll` immediately on mount (covering cold start)
+and every 1s thereafter (covering an in-progress resolution, well inside
+the 2s budget), rendering `FlightScreen` unchanged until a `'delivered'`
+result arrives, then swapping to the reveal once and never polling again.
+A `'died'` result is deliberately never surfaced here — this screen is
+recipient-only, and INV-2/§8 mean the recipient never learns a lost
+message existed; a `'died'` poll result (which the real RLS-gated backend
+should never actually produce for a recipient) is treated the same as
+"still unresolved" rather than crashing or leaking anything. Self-review
+(`/code-review --effort high`) found a real gap beyond the two listed
+criteria: the revealed state was a plain `useState` never keyed to
+`flightId`, so a caller that reused one mounted `ArrivalScreen` instance
+across two different flights (a fresh `flightId` prop, no remount) would
+keep showing the previous flight's already-revealed note over a new,
+unresolved one. Fixed by resetting to unresolved inside the effect
+whenever `flightId` changes, before the new poll starts; verified directly
+that the regression test fails against the pre-fix code and passes
+against the fix.
 
 **Touches:** `apps/mobile/src/ui/screens/ArrivalScreen.tsx`,
-`ArrivalScreen.test.tsx`, `apps/mobile/src/ui/copy/strings.ts`
+`ArrivalScreen.test.tsx`, `apps/mobile/src/ui/copy/strings.ts` (no change
+needed — see resolution note)
 
 ---
 

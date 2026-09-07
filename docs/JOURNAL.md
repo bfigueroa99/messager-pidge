@@ -3966,3 +3966,90 @@ knowledge survives a context reset.
 - **Follow-ups filed:** none. The next unblocked `todo` items are `M1-21`
   (depends on `M1-20`, `M1-16`, both now done) and `M1-22` (depends on
   `M1-20`, now done).
+
+## Iteration 38 — 2026-09-07 — M1-21
+
+- **Outcome:** done
+- **CI:** `mcp__github__actions_list` was available. The tip's `verify` runs
+  before this iteration's push (`d79d0ad`, both the `push` run `34069546957`
+  and the `pull_request` run `34069548316`) again showed `Q-003`'s
+  never-scheduled signature: a `created_at`→`updated_at` span of about 4
+  seconds. Confirmed directly rather than assumed —
+  `get_job_logs(run_id: 34069548316, failed_only: true, return_content: true)`
+  returned `{"error": "failed to download log content for job ...: HTTP
+  404"}`, the same tell every prior iteration has logged. Not this
+  iteration's item; `Q-003` is already open and unchanged.
+- **Selection:** `iteration(38) - last_hardening_iteration(35) = 3 < 5`, not
+  hardening. `iteration(38) - last_audit_iteration(31) = 7 < 10`, not audit.
+  Topmost unblocked `todo` in `ROADMAP.md` is `M1-21` (depends on `M1-20`,
+  `M1-16`, both `done`). Size `M`, no split needed.
+- **Implementation:** `ArrivalScreen.tsx` sits on top of `FlightScreen`
+  (`M1-16`): it renders `FlightScreen` unchanged while unresolved, polling
+  `M1-20`'s `ResolutionDeps.poll(flightId)` immediately on mount (covers the
+  cold-start acceptance criterion — an already-resolved flight reveals on
+  the first settled render with no transitional "flying" frame) and every
+  1000ms thereafter (well inside the 2-second reveal budget the other
+  criterion sets), then swaps to the reveal scene once — and only once — a
+  `'delivered'` result arrives, clearing its own interval so a revealed
+  screen never keeps polling forever. `strings.ts` needed no new variant:
+  the `'arrival'` copy ("A pigeon has arrived from {senderName}.") already
+  existed from `M1-01`'s exhaustive catalogue, unused until this item. A
+  `'died'` result is deliberately never surfaced — this screen is
+  recipient-only, and INV-2/§8 mean the recipient never learns a lost
+  message existed, so a `'died'` poll result (which the real RLS-gated
+  backend should never actually produce here) is treated identically to
+  "still unresolved" rather than special-cased into a crash or a leak.
+  `deps.poll`'s rejection (the honest `realResolutionDeps` placeholder,
+  still true pending `M1-11`/`Q-002`) is swallowed the same way — the
+  screen genuinely does not know whether the flight resolved, so it stays
+  on `FlightScreen`, matching the "no fake success" precedent the other
+  placeholder deps already set.
+- **Verify:** typecheck ok · lint ok · 236 tests ok (floor raised 230 → 236,
+  +6 new `[M1-21]` tests: five for the item's own behaviour, one regression
+  test from self-review below) · flight-sim coverage unchanged
+  (99.08%/90.9% aggregate, both above the 90%/85% gate — this item touched
+  no `flight-sim` source) · `gate:roadmap` ok (30 done/7 pending, unchanged
+  count since `M1-21` was already counted as a pending item) · `gate:tests`
+  ok (floor raised to 236). No `supabase/`, auth, or RLS touched — no
+  `/security-review` per `docs/LOOP.md` §4. No new runtime dependency, no
+  ADR.
+- **Self-review (`/code-review --effort high`):** found one real gap beyond
+  the two listed acceptance criteria: the revealed state was a plain
+  `useState` never keyed to `flightId`, so a caller that reused one mounted
+  `ArrivalScreen` instance across two different flights (a fresh `flightId`
+  prop, no remount) would keep showing the previous flight's
+  already-revealed note over a newly-assigned, unresolved one — a real bug
+  even though no caller wires this component up yet (it is a leaf
+  component; no route exists to reuse it incorrectly today). Fixed by
+  resetting to unresolved inside the effect whenever `flightId` changes,
+  before the new poll starts. Verified directly, not assumed: reverting
+  just that reset line reproduces the bug in the new regression test
+  (`screen.getByTestId('flight-screen')` fails to find the element because
+  the stale reveal is still showing), confirming the fix and its test
+  actually cover the gap. `verify` re-run clean after the fix (236 tests,
+  same gates).
+- **Surprises for the next agent:**
+  - **A component built as a leaf with no caller yet can still have a real
+    "reused across props" bug, and it is worth checking for one even though
+    nothing today actually reuses the instance.** `M1-21` has no route
+    wired to it (matching `M1-16`/`M1-07`'s own precedent of building ahead
+    of the real navigation that does not exist yet) — self-review still
+    caught a stale-state bug that only manifests once some future caller
+    (a message list reusing one screen instance across different
+    conversations, say) does reuse it without remounting. Worth defaulting
+    to "does this component's own state ever need to key off a prop that
+    can change without a remount" as a self-review question even when no
+    concrete caller exists to demonstrate the bug against yet.
+  - `M1-22` (the sender's loss screen, depends only on `M1-20`) is now the
+    only remaining child of the `M1-08` split, and is unblocked. After it
+    lands, `M1-09` (the demo harness) becomes the topmost unblocked `todo`.
+  - `ArrivalScreen`'s poll-immediately-then-1Hz-interval pattern is new to
+    this codebase — every prior screen (`FlightCard`, `FlightScreen`) reads
+    a caller-supplied `now()` and derives everything locally, never calling
+    out to an async dependency on a timer. Worth keeping this shape in mind
+    for `M1-22`, which will need the same "poll `ResolutionDeps` on a
+    timer, reveal once" mechanism for the sender's own loss screen — likely
+    close to identical to this item's `useEffect`, modulo which outcome it
+    reveals on.
+- **Follow-ups filed:** none. The next unblocked `todo` item is `M1-22`
+  (depends on `M1-20`, now done).
