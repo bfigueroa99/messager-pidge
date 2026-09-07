@@ -1398,7 +1398,7 @@ it is polled, matching the honest-placeholder precedent `M1-03` (`LoftPickerDeps
 
 ### [ ] M1-21 — The arrival reveal scene
 
-**Status:** todo · **Size:** M · **Depends on:** M1-20, M1-16
+**Status:** in-progress · **Size:** M · **Depends on:** M1-20, M1-16
 
 **Why:** Split from `M1-08` (see its resolution note). The recipient's
 payoff for 22 hours of waiting: the bird lands on the chart, the card
