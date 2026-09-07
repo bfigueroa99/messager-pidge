@@ -3885,3 +3885,84 @@ knowledge survives a context reset.
     carried a `**Blocked by:**` note.
 - **Follow-ups filed:** none — `M1-20`, `M1-21` and `M1-22` are the
   follow-ups. The next unblocked `todo` item (by roadmap order) is `M1-20`.
+
+## Iteration 37 — 2026-09-07 — M1-20
+
+- **Outcome:** done
+- **CI:** `mcp__github__actions_list` was available. The tip's `verify` runs
+  before this iteration's push (`86a0c05`, both the `push` run `34032670428`
+  and the `pull_request` run `34032672258`) again showed `Q-003`'s
+  never-scheduled signature: a `created_at`→`updated_at` span of about 4
+  seconds. Confirmed directly rather than assumed —
+  `get_job_logs(run_id: 34032670428, failed_only: true, return_content: true)`
+  returned `{"error": "failed to download log content for job ...: HTTP
+  404"}`, the same tell every prior iteration has logged. Not this
+  iteration's item; `Q-003` is already open and unchanged.
+- **Selection:** `iteration(37) - last_hardening_iteration(35) = 2 < 5`, not
+  hardening. `iteration(37) - last_audit_iteration(31) = 6 < 10`, not audit.
+  Topmost unblocked `todo` in `ROADMAP.md` is `M1-20` (depends on `M1-16`,
+  `M1-07`, both `done`). Size `S`, no split needed.
+- **Implementation:** `resolution-deps.ts` defines the shared client-side
+  contract `M1-21`/`M1-22` will both build on: `ResolutionResult` (`outcome:
+  FlightOutcome`, plus `body`/`place`/`time`, each mutually exclusive by
+  outcome — `body` only for `'delivered'`, `place`/`time` only for `'died'`,
+  matching the existing `t({ key: 'death', place, time, ... })` copy variant
+  already in `strings.ts`) and `ResolutionDeps` (`poll(flightId):
+  Promise<ResolutionResult | null>` — `null` itself, not an object with a
+  null body, for every unresolved flight). Chose `poll` alone over also
+  offering a `watch` callback: the item's own acceptance criterion is phrased
+  in polling terms ("ten consecutive polls"), and a `watch` shim would either
+  wrap the same `poll` internally (no independent behavior to test) or need
+  a real timer/subscription this item explicitly must not build (`Do NOT`).
+  `realResolutionDeps` mirrors `realComposeDeps`/`realLoftPickerDeps`
+  exactly: no Supabase client exists yet (`M1-11`, blocked on `Q-002`), so it
+  rejects with the same "no Supabase client wired into the mobile app yet —
+  see M1-11" message rather than returning `null` forever, which would read
+  as "still waiting" instead of "cannot reach the loft".
+  `createFakeResolutionDeps({ resolveAtMs, result, now })` is the
+  deterministic test double `M1-21`/`M1-22` will inject: it compares an
+  injected `now: () => number` against `resolveAtMs` on every call, matching
+  `FlightScreen`/`FlightCard`'s existing closure-based clock pattern exactly
+  rather than a real `setTimeout`/interval, so a test drives a flight from
+  unresolved to resolved by mutating the value the closure reads between
+  polls.
+- **Verify:** typecheck ok · lint ok · 230 tests ok (floor raised 226 → 230,
+  +4 new `[M1-20]` tests) · flight-sim coverage unchanged (99.08%/90.9%
+  aggregate, both above the 90%/85% gate — this item touched no `flight-sim`
+  source, only its `FlightOutcome` type) · `gate:roadmap` ok (30 done/7
+  pending) · `gate:tests` ok (floor raised to 230). No `supabase/`, auth, or
+  RLS touched — no `/security-review` per `docs/LOOP.md` §4. No new runtime
+  dependency, no ADR.
+- **Self-review (`/code-review --effort high`):** no findings. Checked
+  against the `compose-deps.ts`/`loft-picker-deps.ts` precedent, the
+  `FlightOutcome`/`resolveAtMs` types, and the injected-clock pattern
+  `FlightScreen`/`FlightCard` already use. No call sites exist yet — this is
+  a leaf dependency module for the not-yet-built `M1-21`/`M1-22` — so no
+  cross-file behavior to trace beyond the precedent files.
+- **Surprises for the next agent:**
+  - **`ResolutionResult`'s `body`/`place`/`time` fields are mutually
+    exclusive by `outcome`, but nothing in the type system enforces that —
+    it is a discriminated union in spirit (`'delivered'` implies
+    `body != null, place == null, time == null`; `'died'` the reverse) but a
+    flat interface in practice, because `M1-21` and `M1-22` were not
+    designed yet and a real discriminated union would have had to guess
+    their exact field needs.** Worth reconsidering as an actual
+    `{ outcome: 'delivered'; body: string } | { outcome: 'died'; place:
+    string; time: string }` union once `M1-21`/`M1-22` land and the real
+    shape each screen consumes is known — a flat interface with
+    always-nullable siblings is the safer choice to ship blind against, but
+    it is not the final word on this type.
+  - **The "ten consecutive polls... return a null body" acceptance
+    criterion reads most naturally as "the whole poll result is null," not
+    "the result is a non-null object with `body: null`."** Implemented it
+    the first way (`poll` resolves to `null` itself pre-resolution, not
+    `{ outcome: ..., body: null, ... }`) since that is what "never
+    surfacing... even the fact of death/survival before the flight has
+    actually resolved" in the item's own `Why` demands — a non-null result
+    with merely a null body would still leak the fact that resolution
+    machinery had already assigned an object, which is a smaller but real
+    version of the same leak `INV-5` forbids. Worth keeping in mind if a
+    future item is tempted to "simplify" by always returning an object.
+- **Follow-ups filed:** none. The next unblocked `todo` items are `M1-21`
+  (depends on `M1-20`, `M1-16`, both now done) and `M1-22` (depends on
+  `M1-20`, now done).

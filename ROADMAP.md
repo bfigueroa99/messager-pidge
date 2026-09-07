@@ -1354,9 +1354,9 @@ now points at `M1-21` and `M1-22`, the last two of the three below.
 
 ---
 
-### [ ] M1-20 — The resolution-watcher contract: never reveal before release
+### [x] M1-20 — The resolution-watcher contract: never reveal before release
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-16, M1-07
+**Status:** done · **Size:** S · **Depends on:** M1-16, M1-07
 **Read first:** `docs/PRODUCT.md` INV-5, `supabase/migrations/0007_visibility_ignores_reaper.sql`
 
 **Why:** Split from `M1-08` (see its resolution note). Before either the
@@ -1389,7 +1389,7 @@ it is polled, matching the honest-placeholder precedent `M1-03` (`LoftPickerDeps
   already exists and is out of scope here.
 
 **Acceptance criteria:**
-- [ ] ten consecutive polls before resolution all return a null body
+- [x] ten consecutive polls before resolution all return a null body
 
 **Touches:** `apps/mobile/src/data/resolution-deps.ts`,
 `apps/mobile/src/data/resolution-deps.test.ts`
