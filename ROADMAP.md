@@ -1457,7 +1457,7 @@ needed — see resolution note)
 
 ### [ ] M1-22 — The loss screen: the memorial the sender alone sees
 
-**Status:** todo · **Size:** S · **Depends on:** M1-20
+**Status:** in-progress · **Size:** S · **Depends on:** M1-20
 
 **Why:** Split from `M1-08` (see its resolution note). `docs/PRODUCT.md` §5's
 tone table gives the exact copy shape for a death: name, place, time, and
