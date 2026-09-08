@@ -1455,9 +1455,9 @@ needed — see resolution note)
 
 ---
 
-### [ ] M1-22 — The loss screen: the memorial the sender alone sees
+### [x] M1-22 — The loss screen: the memorial the sender alone sees
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-20
+**Status:** done · **Size:** S · **Depends on:** M1-20
 
 **Why:** Split from `M1-08` (see its resolution note). `docs/PRODUCT.md` §5's
 tone table gives the exact copy shape for a death: name, place, time, and
@@ -1477,10 +1477,30 @@ sender's alone; the recipient never learns the message existed.
   exists server-side to display.
 
 **Acceptance criteria:**
-- [ ] the loss screen names the place and time and never shows the text
+- [x] the loss screen names the place and time and never shows the text
+
+**Resolution note:** mirrors `ArrivalScreen` (`M1-21`) exactly, per that
+item's own journal note anticipating this shape: sits on top of
+`FlightScreen` (`M1-16`), polls `M1-20`'s `ResolutionDeps.poll(flightId)`
+immediately on mount and every 1000ms thereafter, and swaps to the memorial
+once — and only once — a `'died'` result arrives, ignoring `'delivered'`
+(out of scope for this item; a delivered flight is not this screen's
+concern). `strings.ts` needed no change — the `'death'` copy variant
+already existed from `M1-01` and was already covered by
+`strings.test.ts`, so this item added no string and no string test.
+`ResolutionResult.body` is contractually `null` for a `'died'` outcome
+(`M1-20`), and the revealed state only ever stores `place`/`time`, never
+`body` — so the note's text has no path to this screen even in principle,
+not merely by the acceptance test's absence of a positive case. Self-review
+(`/code-review --effort high`) found no correctness gaps; it noted the
+polling `useEffect` is a near-verbatim duplicate of `ArrivalScreen`'s own
+(differing only in the outcome literal and result fields), a candidate for
+a shared `usePollResolution` hook — pre-existing convention `ArrivalScreen`
+already established, not something this diff worsens, so left as a noted
+follow-up rather than fixed here (see `docs/JOURNAL.md`).
 
 **Touches:** `apps/mobile/src/ui/screens/LossScreen.tsx`,
-`LossScreen.test.tsx`, `apps/mobile/src/ui/copy/strings.ts`
+`LossScreen.test.tsx`
 
 ---
 

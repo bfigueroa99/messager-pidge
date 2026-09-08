@@ -4053,3 +4053,82 @@ knowledge survives a context reset.
     reveals on.
 - **Follow-ups filed:** none. The next unblocked `todo` item is `M1-22`
   (depends on `M1-20`, now done).
+
+## Iteration 39 — 2026-09-08 — M1-22
+
+- **Outcome:** done
+- **CI:** `mcp__github__actions_list` was available. The tip's `verify` runs
+  before this iteration's push (`5d87e73`, both the `push` run `34122885346`
+  and the `pull_request` run `34122889578`) again showed `Q-003`'s
+  never-scheduled signature: a `created_at`→`updated_at` span of about 6
+  seconds. Confirmed directly rather than assumed —
+  `get_job_logs(run_id: 34122889578, failed_only: true, return_content: true)`
+  returned `{"error": "failed to download log content for job ...: HTTP
+  404"}`, the same tell every prior iteration has logged. Not this
+  iteration's item; `Q-003` is already open and unchanged.
+- **Selection:** `iteration(39) - last_hardening_iteration(35) = 4 < 5`, not
+  hardening. `iteration(39) - last_audit_iteration(31) = 8 < 10`, not audit.
+  Topmost unblocked `todo` in `ROADMAP.md` is `M1-22` (depends on `M1-20`,
+  done). Size `S`, no split needed.
+- **Implementation:** `LossScreen.tsx` mirrors `ArrivalScreen.tsx` (`M1-21`)
+  almost exactly, as that item's own journal entry anticipated: it sits on
+  top of `FlightScreen` (`M1-16`), polls `M1-20`'s
+  `ResolutionDeps.poll(flightId)` immediately on mount (cold start) and
+  every 1000ms thereafter, and swaps to the memorial once — and only once —
+  a `'died'` result arrives, clearing its own interval. A `'delivered'`
+  result is ignored (treated as still unresolved) — out of scope for this
+  item, which only covers the loss path. `strings.ts` needed no change: the
+  `'death'` copy variant ("{birdName} did not arrive. Taken near {place}, at
+  {time}. The note was not recovered.") already existed from `M1-01` and was
+  already covered by `strings.test.ts`. The revealed state stores only
+  `place`/`time`, never `body` — `M1-20`'s own contract guarantees `body` is
+  `null` for a `'died'` outcome, so the deleted note's text has no path to
+  this screen even in principle, not merely by omission of a test exercising
+  it.
+- **Verify:** typecheck ok · lint ok · 242 tests ok (floor raised 236 → 242,
+  +6 new `[M1-22]` tests) · flight-sim coverage unchanged (99.08%/90.9%
+  aggregate, both above the 90%/85% gate — this item touched no
+  `flight-sim` source) · `gate:roadmap` ok (31 done/6 pending) · `gate:tests`
+  ok (floor raised to 242, applied automatically by `check-test-count.mjs`
+  during this iteration's own `verify` run). No `supabase/`, auth, or RLS
+  touched — no `/security-review` per `docs/LOOP.md` §4. No new runtime
+  dependency, no ADR.
+- **Self-review (`/code-review --effort high`):** no correctness findings.
+  Checked against the `ArrivalScreen`/`ResolutionDeps` precedent, the
+  `'died'`-only guard, the `flightId`-reset regression, and the
+  stop-polling-on-reveal behavior — all correctly implemented and tested.
+  One noted (not fixed) observation: `LossScreen`'s polling `useEffect` is a
+  near-verbatim duplicate of `ArrivalScreen`'s own (same shape, differing
+  only in the outcome literal and which result fields it reads) — a
+  candidate for a shared `usePollResolution` hook. Left alone: this is
+  pre-existing convention `ArrivalScreen` already established, not something
+  this diff worsens, and `docs/LOOP.md`'s own size discipline argues against
+  a refactor riding along with an unrelated `S`-sized item. Verified directly
+  (not merely reasoned about) that the `flightId`-reset fix is load-bearing:
+  reverted just the `setState(UNRESOLVED)` reset line and re-ran the
+  "resets the memorial when reused for a different, unresolved flight" test —
+  it failed exactly as expected (the stale `'Cape Cod fog bank'` memorial
+  from flight A stayed on screen instead of flight B's `flight-screen`
+  testID appearing), confirming the fix and its regression test actually
+  cover the gap. Restored the fix and re-ran `verify` clean (242 tests, same
+  gates) before landing.
+- **Surprises for the next agent:**
+  - **`ArrivalScreen` and `LossScreen` are now two independent
+    implementations of the identical "poll `ResolutionDeps` on a 1s interval
+    from mount, reveal once on a matching outcome, reset on `flightId`
+    change, stop polling once revealed" mechanism** — worth extracting into
+    a shared hook (e.g. `usePollResolution<T>(deps, flightId, matches:
+    (r: ResolutionResult) => T | null)`) at the next `HARDENING` iteration
+    (`iteration(40) - last_hardening_iteration(35) = 5 >= 5`, so iteration 40
+    itself is due for one) rather than left to drift into a third copy if
+    any future screen needs the same pattern.
+  - This closes out the last child of `M1-08`'s split (`M1-20`, `M1-21`,
+    `M1-22` all now `done`). `M1-09` (the demo harness, depends on `M1-21`
+    and `M1-22`) is the topmost unblocked `todo` in `ROADMAP.md` as of this
+    push — but note the hardening override above fires first at iteration
+    40, ahead of `M1-09`.
+- **Follow-ups filed:** none — the shared-polling-hook observation above is
+  recorded here for the next `HARDENING` pass rather than filed as its own
+  roadmap item, matching how prior hardening-candidate observations
+  (`M1-18`'s marker-radius math, at iteration 30) were held in the journal
+  until a hardening iteration actually picked them up.
