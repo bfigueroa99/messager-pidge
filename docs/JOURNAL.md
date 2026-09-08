@@ -4053,3 +4053,85 @@ knowledge survives a context reset.
     reveals on.
 - **Follow-ups filed:** none. The next unblocked `todo` item is `M1-22`
   (depends on `M1-20`, now done).
+
+## Iteration 39 — 2026-09-08 — M1-22
+
+- **Outcome:** done
+- **CI:** `mcp__github__actions_list` was available. The tip's `verify` runs
+  on `5d87e73` (both the `push` run `34122885346` and `pull_request` run
+  `34122889578`) showed `Q-003`'s never-scheduled signature again: a
+  `created_at`→`updated_at` span of about 6 seconds. Confirmed directly —
+  `get_job_logs(run_id: 34122889578, failed_only: true, return_content:
+  true)` returned a 404 on real log content, same tell every prior
+  iteration has logged. Not this iteration's item; `Q-003` is already open
+  and unchanged.
+- **Selection:** `iteration(39) - last_hardening_iteration(35) = 4 < 5`, not
+  hardening. `iteration(39) - last_audit_iteration(31) = 8 < 10`, not audit.
+  Topmost unblocked `todo` in `ROADMAP.md` is `M1-22` (depends on `M1-20`,
+  `done`). Size `S`, no split needed.
+- **Implementation:** `LossScreen.tsx` mirrors `ArrivalScreen.tsx`
+  (`M1-21`) near-exactly, as the sender-side opposite of the same
+  resolution-watching shape: it sits on top of `FlightScreen` (`M1-16`),
+  polling `M1-20`'s `ResolutionDeps.poll(flightId)` immediately on mount
+  (cold start) and every 1000ms thereafter, rendering `FlightScreen`
+  unchanged for as long as the flight is unresolved *or* resolves as
+  `'delivered'` — a successful flight is not this screen's concern, so
+  `'delivered'` is treated identically to "still unresolved" here, the
+  exact mirror of `ArrivalScreen` treating `'died'` as "still unresolved"
+  on the recipient's side. Only a `'died'` result swaps to the memorial —
+  bird name (a new required prop, since `ResolutionResult` carries no bird
+  name), place, and time via `strings.ts`'s pre-existing `'death'` copy
+  variant, unused until now — and the memorial branch never reads
+  `result.body` at all, so the note's text cannot leak through this screen
+  structurally, not just by convention. Applied `M1-21`'s own self-review
+  finding proactively rather than rediscovering it: the revealed
+  (`lost: true`) state resets to `NOT_LOST` inside the effect whenever
+  `flightId` changes, before the new poll starts, with a regression test
+  from the start rather than a fix-after-the-fact.
+- **Verify:** typecheck ok · lint ok · 243 tests ok (floor raised 236 →
+  243, +7 new `[M1-22]` tests) · flight-sim coverage unchanged
+  (99.08%/90.9% aggregate, both above the 90%/85% gate — this item touched
+  no `flight-sim` source) · `gate:roadmap` ok (31 done/6 pending) ·
+  `gate:tests` ok (floor raised to 243, applied automatically by
+  `scripts/check-test-count.mjs` against `.loop/state.json` during this
+  run). No `supabase/`, auth, or RLS touched — no `/security-review` per
+  `docs/LOOP.md` §4. No new runtime dependency, no ADR.
+- **Self-review (`/code-review --effort high`):** found no correctness gap
+  — the implementation is a faithful, symmetric mirror of the
+  already-reviewed `ArrivalScreen` pattern, the `flightId`-reset bug M1-21
+  had to fix after the fact was already present here from the start, and
+  the memorial branch structurally cannot read `result.body`. One
+  deferred style finding: `LossScreen`'s and `ArrivalScreen`'s polling
+  `useEffect` (reset-on-`flightId`-change, ref-cached `deps`, immediate
+  poll + 1000ms interval, `settled`-flag guard, cleanup) is now
+  copy-pasted near-verbatim between the two files, differing only in the
+  outcome discriminant and which result fields each extracts. A shared
+  `useResolutionPoll(deps, flightId, predicate)` hook would remove ~30
+  duplicated lines. Not fixed this iteration — `docs/LOOP.md` §6 reserves
+  duplication cleanup for a HARDENING iteration, and this is a feature
+  iteration — but flagged here so the next HARDENING pass (due at
+  iteration ≥ 40) picks it up rather than rediscovering it from scratch.
+- **Surprises for the next agent:**
+  - **A sibling screen's self-review finding is worth applying proactively
+    to its mirror, not just noting for later.** `M1-21`'s journal entry
+    called out that `ArrivalScreen`'s reveal state needed to reset on a
+    `flightId` change, found only by self-review after the fact. `M1-22`
+    built `LossScreen` as that same screen's mirror image, so the fix went
+    in from the start (with its own regression test) instead of waiting
+    for this iteration's self-review to rediscover the identical bug in
+    the identical shape — worth treating "does the sibling's own journal
+    entry list a bug in the pattern I'm about to copy" as a standing
+    self-review question, before running the review, whenever an item is
+    explicitly built as another item's mirror.
+  - Now that both `M1-21` and `M1-22` exist, `LossScreen` and
+    `ArrivalScreen`'s near-identical polling `useEffect` is a real,
+    now-twice-written duplication (see the self-review note above) — the
+    next HARDENING iteration (due once `iteration - last_hardening_iteration
+    >= 5`, i.e. iteration ≥ 40) should extract a shared
+    `useResolutionPoll` hook rather than treating this as three-strikes-
+    then-abstract; two near-identical ~30-line effects with the exact same
+    race-condition shape is enough to be worth collapsing now, per
+    `docs/LOOP.md` §6 item 3.
+  - `M1-08`'s split is now fully done (`M1-20`, `M1-21`, `M1-22` all
+    landed). The next unblocked `todo` item is `M1-09` (the demo harness,
+    depends on `M1-21`/`M1-22`, both now done).

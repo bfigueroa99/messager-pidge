@@ -1455,9 +1455,9 @@ needed — see resolution note)
 
 ---
 
-### [ ] M1-22 — The loss screen: the memorial the sender alone sees
+### [x] M1-22 — The loss screen: the memorial the sender alone sees
 
-**Status:** in-progress · **Size:** S · **Depends on:** M1-20
+**Status:** done · **Size:** S · **Depends on:** M1-20
 
 **Why:** Split from `M1-08` (see its resolution note). `docs/PRODUCT.md` §5's
 tone table gives the exact copy shape for a death: name, place, time, and
@@ -1477,10 +1477,26 @@ sender's alone; the recipient never learns the message existed.
   exists server-side to display.
 
 **Acceptance criteria:**
-- [ ] the loss screen names the place and time and never shows the text
+- [x] the loss screen names the place and time and never shows the text
+
+**Resolution note:** `strings.ts` needed no change — the `'death'` copy
+variant (`{ key: 'death', birdName, place, time }`) already existed from
+`M1-01`'s exhaustive catalogue, unused until now. `LossScreen` mirrors
+`ArrivalScreen` (`M1-21`) exactly, as the opposite case of the same
+resolution-watching shape: it sits on top of `FlightScreen` (`M1-16`) and
+renders it unchanged for as long as the flight is unresolved *or* resolves
+as `'delivered'` — a successful flight is not this screen's concern, so
+`'delivered'` is treated identically to "still unresolved" here, the exact
+mirror of `ArrivalScreen` treating `'died'` as "still unresolved" on the
+recipient's side. Only a `'died'` result swaps to the memorial, and the
+memorial branch never reads `result.body` at all, so the note's text
+cannot leak through this screen even if a result somehow carried one — a
+regression test constructs exactly that (a `'died'` result with a non-null
+`body`) and asserts the text never renders.
 
 **Touches:** `apps/mobile/src/ui/screens/LossScreen.tsx`,
-`LossScreen.test.tsx`, `apps/mobile/src/ui/copy/strings.ts`
+`LossScreen.test.tsx` (`apps/mobile/src/ui/copy/strings.ts` needed no
+change — see resolution note)
 
 ---
 
