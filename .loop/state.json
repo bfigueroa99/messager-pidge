@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "paused": false,
+  "iteration": 40,
+  "current_item": null,
+  "claimed_at": null,
+  "claimed_by": null,
+  "last_outcome": "DONE (iteration 39): M1-22, the loss screen. CI check first: the tip's verify runs on 5d87e73 (both push run 34122885346 and pull_request run 34122889578) again showed Q-003's never-scheduled signature - confirmed directly via get_job_logs(run_id: 34122889578, failed_only: true, return_content: true), which returned a 404 on real log content, same as every prior iteration. Not this iteration's item. Selection: topmost unblocked todo, M1-22 (depends on M1-20, done), size S. Implementation: apps/mobile/src/ui/screens/LossScreen.tsx mirrors ArrivalScreen (M1-21) exactly per that item's own journal note: sits on top of FlightScreen (M1-16), polls M1-20's ResolutionDeps.poll(flightId) on mount and every 1000ms thereafter, swaps to the memorial once a 'died' result arrives and stops polling; a 'delivered' result is ignored (out of scope). strings.ts needed no change - the 'death' copy variant already existed from M1-01. Self-review (/code-review --effort high) found no correctness gaps; noted (not fixed) that LossScreen's polling useEffect duplicates ArrivalScreen's own, a candidate for a shared usePollResolution hook at the next HARDENING pass. Verified the flightId-reset regression test fails pre-fix and passes post-fix. pnpm run verify green: typecheck ok, lint ok, 242 tests (floor 236->242, +6 new [M1-22] tests), flight-sim coverage unchanged 99.08%/90.9%, gate:roadmap ok (31 done/6 pending), gate:tests ok (floor raised to 242). No supabase/auth/RLS touched, no /security-review needed. No new runtime dependency, no ADR. BRANCH NOTE: this session's harness-level Git Development Branch Requirements pinned it to claude/tender-thompson-jralin instead of this state file's own claude/app-development-loop-szg7yj (both pointed at the identical commit 5d87e73 at the start of this iteration, so no work was lost switching, but this iteration's push landed on tender-thompson-jralin, not the branch this loop has used through iteration 38 - a human needs to reconcile the two branches/PRs before the next scheduled firing, or the original branch will re-select M1-22 as still-todo and redo this work.",
+  "consecutive_failures": 0,
+  "last_hardening_iteration": 35,
+  "last_audit_iteration": 31,
+  "test_count_floor": 242,
+  "branch": "claude/tender-thompson-jralin",
+  "budget": {
+    "max_iterations": 60,
+    "stop_after": "2026-09-15T00:00:00Z"
+  },
+  "pr_number": 1
+}
