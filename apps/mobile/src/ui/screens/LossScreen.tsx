@@ -1,18 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { PublicFlight, Viewport } from '@pidge/flight-sim';
 
 import type { ResolutionDeps } from '../../data/resolution-deps';
+import { useResolutionPoll } from '../../data/use-resolution-poll';
 import { t } from '../copy/strings';
 import { COLORS } from '../theme/tokens';
 import { FONT_FAMILIES, FONT_SIZES } from '../theme/typography';
 import { sharedStyles } from '../theme/styles';
 import { FlightScreen } from './FlightScreen';
-
-/** Same polling cadence as `ArrivalScreen` (`M1-21`): an immediate poll on
- * mount covers cold start, and this interval only matters for a flight that
- * resolves while the screen is already open. */
-const POLL_MS = 1000;
 
 export interface LossScreenProps {
   readonly deps: ResolutionDeps;
@@ -30,10 +25,6 @@ export interface LossScreenProps {
   readonly now: () => number;
   readonly reducedMotion?: boolean;
 }
-
-type State = { readonly lost: false } | { readonly lost: true; readonly place: string; readonly time: string };
-
-const NOT_LOST: State = { lost: false };
 
 /**
  * `[M1-22]` The sender's memorial: the only screen anyone ever sees for a
@@ -63,50 +54,16 @@ export function LossScreen({
   now,
   reducedMotion,
 }: LossScreenProps) {
-  const [state, setState] = useState<State>(NOT_LOST);
+  const memorial = useResolutionPoll(deps, flightId, (result) =>
+    result.outcome === 'died' && result.place !== null && result.time !== null
+      ? { place: result.place, time: result.time }
+      : null,
+  );
 
-  const depsRef = useRef(deps);
-  depsRef.current = deps;
-
-  useEffect(() => {
-    // Reset before polling starts, not just when a poll resolves: reusing
-    // this component across two different flights (a fresh `flightId`, no
-    // remount) must never keep showing the previous flight's memorial while
-    // the new one is still unresolved.
-    setState(NOT_LOST);
-
-    let settled = false;
-    const id = setInterval(runPoll, POLL_MS);
-
-    function runPoll(): void {
-      depsRef.current.poll(flightId).then(
-        (result) => {
-          if (settled || result === null || result.outcome !== 'died' || result.place === null || result.time === null) return;
-          settled = true;
-          clearInterval(id);
-          setState({ lost: true, place: result.place, time: result.time });
-        },
-        () => {
-          // `realResolutionDeps` rejects honestly while there is nothing
-          // live to poll yet (`M1-11`, blocked on Q-002). Swallowed rather
-          // than crashing: this screen genuinely does not know whether the
-          // flight resolved, so it stays on `FlightScreen` — the same
-          // "no fake success" precedent the other placeholder deps set.
-        },
-      );
-    }
-
-    runPoll();
-    return () => {
-      settled = true;
-      clearInterval(id);
-    };
-  }, [flightId]);
-
-  if (state.lost) {
+  if (memorial !== null) {
     return (
       <View style={sharedStyles.screen} testID="loss-screen">
-        <Text style={styles.body}>{t({ key: 'death', birdName, place: state.place, time: state.time })}</Text>
+        <Text style={styles.body}>{t({ key: 'death', birdName, place: memorial.place, time: memorial.time })}</Text>
       </View>
     );
   }

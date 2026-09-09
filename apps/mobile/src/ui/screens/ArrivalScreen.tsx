@@ -1,19 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { PublicFlight, Viewport } from '@pidge/flight-sim';
 
 import type { ResolutionDeps } from '../../data/resolution-deps';
+import { useResolutionPoll } from '../../data/use-resolution-poll';
 import { t } from '../copy/strings';
 import { COLORS, SPACING } from '../theme/tokens';
 import { FONT_FAMILIES, FONT_SIZES } from '../theme/typography';
 import { sharedStyles } from '../theme/styles';
 import { FlightScreen } from './FlightScreen';
-
-/** How often to poll while unresolved. An immediate poll on mount (below)
- * covers the cold-start case; this interval only matters for a flight that
- * resolves while the screen is already open, and must stay well under the
- * 2-second reveal budget the acceptance criterion sets. */
-const POLL_MS = 1000;
 
 export interface ArrivalScreenProps {
   readonly deps: ResolutionDeps;
@@ -30,10 +24,6 @@ export interface ArrivalScreenProps {
   readonly now: () => number;
   readonly reducedMotion?: boolean;
 }
-
-type State = { readonly revealed: false } | { readonly revealed: true; readonly body: string };
-
-const UNRESOLVED: State = { revealed: false };
 
 /**
  * `[M1-21]` The recipient's arrival-reveal scene. Sits on top of `FlightScreen`
@@ -64,51 +54,15 @@ export function ArrivalScreen({
   now,
   reducedMotion,
 }: ArrivalScreenProps) {
-  const [state, setState] = useState<State>(UNRESOLVED);
+  const body = useResolutionPoll(deps, flightId, (result) =>
+    result.outcome === 'delivered' ? result.body : null,
+  );
 
-  const depsRef = useRef(deps);
-  depsRef.current = deps;
-
-  useEffect(() => {
-    // Reset before polling starts, not just when a poll resolves: a caller
-    // that reuses this component across two different flights (a fresh
-    // `flightId`, no remount) must never keep showing the previous flight's
-    // reveal while the new one is still unresolved.
-    setState(UNRESOLVED);
-
-    let settled = false;
-    const id = setInterval(runPoll, POLL_MS);
-
-    function runPoll(): void {
-      depsRef.current.poll(flightId).then(
-        (result) => {
-          if (settled || result === null || result.outcome !== 'delivered' || result.body === null) return;
-          settled = true;
-          clearInterval(id);
-          setState({ revealed: true, body: result.body });
-        },
-        () => {
-          // `realResolutionDeps` rejects honestly while there is nothing
-          // live to poll yet (`M1-11`, blocked on Q-002). Swallowed rather
-          // than crashing: this screen genuinely does not know whether the
-          // flight has resolved, so it stays on `FlightScreen` — the same
-          // "no fake success" precedent the other placeholder deps set.
-        },
-      );
-    }
-
-    runPoll();
-    return () => {
-      settled = true;
-      clearInterval(id);
-    };
-  }, [flightId]);
-
-  if (state.revealed) {
+  if (body !== null) {
     return (
       <View style={sharedStyles.screen} testID="arrival-screen">
         <Text style={styles.headline}>{t({ key: 'arrival', senderName })}</Text>
-        <Text style={styles.body}>{state.body}</Text>
+        <Text style={styles.body}>{body}</Text>
       </View>
     );
   }

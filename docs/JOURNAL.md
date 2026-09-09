@@ -4135,3 +4135,108 @@ knowledge survives a context reset.
   - `M1-08`'s split is now fully done (`M1-20`, `M1-21`, `M1-22` all
     landed). The next unblocked `todo` item is `M1-09` (the demo harness,
     depends on `M1-21`/`M1-22`, both now done).
+
+## Iteration 40 — 2026-09-09 — HARDENING
+
+- **Outcome:** done
+- **CI:** `mcp__github__actions_list` was available. The tip's `verify` runs
+  on `fa80b05` (both the `push` run `34226498947` and the `pull_request` run
+  `34226502236`) again showed `Q-003`'s never-scheduled signature. Confirmed
+  directly — `get_job_logs(run_id: 34226502236, failed_only: true,
+  return_content: true)` returned `{"error": "failed to download log content
+  for job ...: HTTP 404"}`, the same tell every prior iteration has logged.
+  Not this iteration's item; `Q-003` is already open and unchanged.
+- **Selection:** `iteration(40) - last_hardening_iteration(35) = 5 >= 5` —
+  the hardening override fires, ahead of the topmost `todo` (`M1-09`, the
+  demo harness, now unblocked since both its dependencies landed).
+  `iteration(40) - last_audit_iteration(31) = 9 < 10`, not audit. HARDENING
+  per `docs/LOOP.md` §6.
+- **What landed:** worked `docs/LOOP.md` §6's checklist against the diff
+  accumulated since the last hardening pass (`231ee99..fa80b05`, covering
+  iterations 36–39: the `M1-08` split and `M1-20`/`M1-21`/`M1-22`):
+  1. Ticked-without-a-test criteria: none — `gate:roadmap` already ok.
+  2. Dead code (`npx knip`): the same already-triaged false positives every
+     prior pass has logged (Edge Function entry points, script-only modules,
+     `expo-font`, the phantom `expo-updates` dependency, `jest.config.js`'s
+     `projects` shorthand, `tokens.ts`/`typography.ts`'s `RADII`,
+     `LINE_HEIGHT_RATIO` and 6 exported type aliases) — nothing new since
+     iteration 35's pass.
+  3. Duplication: the item both iteration 38's and 39's journal entries
+     explicitly flagged and deferred here — `ArrivalScreen.tsx` (`M1-21`)
+     and `LossScreen.tsx` (`M1-22`)'s near-identical ~30-line polling
+     `useEffect` (reset-on-`flightId`-change, ref-cached `deps`, immediate
+     poll + 1000ms interval, `settled`-flag guard, cleanup), differing only
+     in which outcome each cared about and which fields it extracted.
+     Extracted `apps/mobile/src/data/use-resolution-poll.ts`:
+     `useResolutionPoll<T>(deps, flightId, extract)`, where `extract:
+     (result: ResolutionResult) => T | null` both selects the outcome a
+     caller cares about and shapes what it needs from a matching result —
+     `ArrivalScreen` now calls it with `(result) => result.outcome ===
+     'delivered' ? result.body : null`, `LossScreen` with `(result) =>
+     result.outcome === 'died' && result.place !== null && result.time !==
+     null ? { place: result.place, time: result.time } : null`. Both
+     `depsRef` and a new `extractRef` are ref-cached inside the hook so
+     neither needs to be a `useEffect` dependency (matching the existing
+     `depsRef` pattern both screens already used for `deps`), keeping the
+     effect's own dependency array at just `[flightId]`, unchanged from
+     before. Chose the data layer (`apps/mobile/src/data/`, alongside
+     `resolution-deps.ts`) over a new `ui/hooks/` directory — no such
+     directory exists yet, and this hook is defined entirely in terms of
+     `ResolutionDeps`/`ResolutionResult`, not any UI-specific concern.
+  4. Coverage: aggregate unchanged at 99.08%/90.9%, both above gate — the
+     hook lives in `apps/mobile`, outside `flight-sim`'s own gated coverage.
+  5. `any`/`@ts-ignore`/`TODO`/`FIXME`: grepped the real source tree
+     directly (`\b(any|@ts-ignore|TODO|FIXME)\b` over `*.ts`/`*.tsx`) — every
+     hit was the English word "any" inside a comment or a copy string (e.g.
+     "any city", "before any query"), none a real `: any` type annotation, a
+     suppression comment, or an open TODO/FIXME. Same as every prior pass.
+  6. Dependencies without an ADR: none — no `package.json`/`pnpm-lock.yaml`
+     change since the last hardening pass.
+  - Verified the extraction was behavior-preserving before trusting it: all
+    11 existing `ArrivalScreen.test.tsx`/`LossScreen.test.tsx` tests pass
+    unmodified against the refactored screens (same assertions, same
+    fixtures, no test edited). Added
+    `apps/mobile/src/data/use-resolution-poll.test.ts`, 5 new tests tagged
+    `[M1-20]`/`[M1-21]`/`[M1-22]` exercising the hook directly rather than
+    only through the two screens: ten consecutive polls before resolution
+    all return `null` (the shared mechanism behind `M1-20`'s own acceptance
+    criterion), a value is revealed once `extract` matches, a mismatched
+    outcome (e.g. a `'died'` result reaching a `delivered`-only extractor)
+    never resolves, polling stops once a value is revealed, and the
+    revealed value resets to `null` when reused for a different `flightId`.
+  - Self-review (`/code-review --effort high`) found no correctness gap:
+    traced the `extract` predicate against both screens' original inline
+    conditions and confirmed they are exact reproductions, confirmed the
+    `settled`/`clearInterval` cleanup and the flightId-reset both carried
+    over unchanged, and confirmed no call site outside the two screens
+    exists yet to break.
+  - No `supabase/`, auth, or RLS touched — no `/security-review` per
+    `docs/LOOP.md` §4.
+- **Verify:** typecheck ok · lint ok · 248 tests ok (floor raised 243 → 248,
+  +5 new `[M1-20]`/`[M1-21]`/`[M1-22]` tests for the extracted hook) ·
+  flight-sim coverage 99.08%/90.9% aggregate (unchanged, both above the
+  90%/85% gate) · `gate:roadmap` ok (32 done, 5 pending, unchanged) ·
+  `gate:tests` ok (floor raised to 248).
+- **Surprises for the next agent:**
+  - **A duplication finding flagged two iterations in advance (iteration 38
+    called it out, iteration 39 confirmed it and pointed at this exact
+    hardening pass) landed exactly as predicted, with no surprises in the
+    extraction itself.** The two effects really were identical modulo the
+    outcome discriminant and extracted fields, so a single generic
+    `extract: (result) => T | null` parameter captured the entire
+    difference cleanly — worth trusting a prior iteration's own "extract
+    this at the next hardening pass" note literally rather than
+    re-deriving the shape from scratch.
+  - `RADII`/`LINE_HEIGHT_RATIO`/the six unused theme type exports have now
+    survived seven consecutive hardening passes (iterations 5, 10, 15, 20,
+    25, 30, 35, and now 40) as a deliberate "not dead code, just not
+    consumed yet" call. Still no concrete consumer; still judged premature
+    to delete given `M1-01`'s own "build an exhaustive catalogue first"
+    intent. Flagging again for the next `AUDIT` iteration (due at
+    `iteration >= 41`, since `iteration(41) - last_audit_iteration(31) =
+    10 >= 10` — the next iteration after this one).
+  - `M1-09` (the demo harness) is now the topmost unblocked `todo` item —
+    both its dependencies (`M1-21`, `M1-22`) are done. The next
+    non-hardening, non-audit iteration should pick it up directly, unless
+    the audit note above fires first.
+- **Follow-ups filed:** none.
