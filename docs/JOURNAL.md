@@ -4240,3 +4240,96 @@ knowledge survives a context reset.
     non-hardening, non-audit iteration should pick it up directly, unless
     the audit note above fires first.
 - **Follow-ups filed:** none.
+
+## Iteration 41 — 2026-09-09 — AUDIT
+
+- **Outcome:** done
+- **CI:** `mcp__github__actions_list` was available. The tip's `verify` runs
+  on `1194a5e` (both the `push` run `34294737572` and the `pull_request` run
+  `34294740222`) again showed `Q-003`'s never-scheduled signature: a job
+  that started and completed within 3 seconds. Confirmed directly —
+  `get_job_logs(run_id: 34294740222, failed_only: true, return_content:
+  true)` returned a 404 on real log content, the same tell every prior
+  iteration has logged. Not this iteration's item; `Q-003` is already open
+  and unchanged.
+- **Selection:** `iteration(41) - last_hardening_iteration(40) = 1 < 5`, not
+  hardening. `iteration(41) - last_audit_iteration(31) = 10 >= 10` — the
+  AUDIT override fires, ahead of the topmost unblocked `todo` (`M1-09`),
+  exactly as iteration 40's own journal entry predicted. AUDIT per
+  `docs/LOOP.md` §7.
+- **What landed:** re-read all of `docs/PRODUCT.md`, then re-derived the
+  INV-1…INV-7 table in `docs/AUDIT.md` independently of iteration 31's —
+  every citation re-read at its current line number from the tree as it
+  stands (`1194a5e`), not copied forward. `packages/` and `supabase/` changed
+  by exactly one file since iteration 31 (`project.ts`: `+unscaledRadius`,
+  `+REST_ZOOM`, confirmed via `git diff --stat 4e65cc8..1194a5e`), so
+  INV-1/INV-2/INV-3/INV-4/INV-5's server-side citations carried forward
+  unchanged; INV-6/INV-7's `project.ts`/`FlightMap.tsx` citations were
+  re-verified at their current lines rather than assumed stable.
+  - **INV-6's iteration-31 caveat is now closed.** That audit flagged
+    `FlightMap`'s scaled `<G>` group letting the marker/route line balloon
+    at high pinch-zoom, and a stale `pan` offset surviving a viewport
+    change, as real-but-cosmetic bugs and filed them as `M1-18`/`M1-19`
+    (both `todo` at the time). Both are `done` now. Read the current
+    `FlightMap.tsx` in full to verify directly rather than trust the
+    roadmap's own checkbox: the route `<Polyline>`s carry
+    `vectorEffect="non-scaling-stroke"`, the marker's radius is
+    `unscaledRadius(MARKER_RADIUS, displayZoom)` (the math itself moved to
+    `packages/flight-sim/src/project.ts` by iteration 35's HARDENING pass,
+    per `CLAUDE.md`'s layering rule), and a `restingViewRef` resets
+    `pan`/`zoom` to the fit-to-bounds resting view — and nulls
+    `gestureStartRef` so a gesture already in flight can't re-apply its
+    stale offset — whenever `segments`/`viewport` genuinely change. Neither
+    fix touches `flightStateAt`/`projectPoint`'s own computation.
+  - **New surface since iteration 31 covered:** `M1-07` (compose/release)
+    and the `M1-08` split (`M1-20`/`M1-21`/`M1-22`, resolution-watching).
+    Specifically re-checked both against `PRODUCT.md` §8's "no fast path,
+    no undo" and INV-2/INV-5: `ComposeScreen.startRelease` makes exactly one
+    call (`deps.release`), guarded by a synchronous ref, and its "keep
+    writing" affordance only ever returns to the unsent note, never touches
+    a released bird. `ArrivalScreen`'s `extract` predicate structurally
+    cannot surface a `'died'` result (only `outcome === 'delivered'`
+    produces a non-null value), and `LossScreen`'s memorial branch never
+    reads `result.body` — read both files in full to confirm this is
+    structural, not just conventional.
+  - **Drift check:** re-ran the non-goal grep (`streak`/`undo`/`unsend`/
+    `retry`/`fast-path`/`boost`/`priority send`/`gacha`/`breed`/`rarity`/
+    `leaderboard`, case-insensitive) across `packages/`, `apps/`,
+    `supabase/` excluding tests. Same two incidental prose hits every prior
+    audit has logged (`geo.ts`'s "streak", `0005_schedule.sql`'s "retry"),
+    plus two new hits — both in `ComposeScreen.tsx`'s own docstring
+    asserting undo is forbidden, not an implementation of it; confirmed no
+    `recall`/`cancel`/`unsend`/`edit` handler exists anywhere in the file
+    (`ComposeScreen.test.tsx` already static-scans for exactly this).
+  - **`ROADMAP.md` vs. `PRODUCT.md`:** read every currently pending item in
+    full — `M1-09` (todo, gates its accelerated clock behind
+    `EXPO_PUBLIC_E2E`), `M1-11` (blocked on `Q-002`, bans a fake-success
+    Supabase stub), `M1-05`/`M1-06`/`M1-08` (`split`, replacements already
+    covered above). No pending item describes a mechanic `PRODUCT.md` does
+    not justify.
+  - **Verdict:** no drift found, either direction. No `GAP` item filed —
+    `ROADMAP.md` itself is unchanged this iteration.
+- **Verify:** re-confirmed green after the docs-only change (no source or
+  test edits this iteration — an audit with no `GAP` found touches nothing
+  but `docs/AUDIT.md`): typecheck ok · lint ok · 248 tests ok (unchanged) ·
+  flight-sim coverage unchanged (99.08%/90.9%, both above gate) ·
+  `gate:roadmap` ok (32 done/5 pending, unchanged) · `gate:tests` ok (floor
+  unchanged at 248).
+- **Surprises for the next agent:**
+  - **Iteration 40's own journal entry predicted this exact iteration would
+    be an AUDIT, and it was right down to the arithmetic** — worth trusting
+    a prior iteration's forward-looking arithmetic note (`iteration(N) -
+    last_audit_iteration >= 10`) as a real prediction, not just a passing
+    comment, when orienting.
+  - Iteration 40 also flagged `RADII`/`LINE_HEIGHT_RATIO`/six unused theme
+    type exports as a recurring `knip` finding it expected "the next AUDIT
+    iteration" to weigh in on — but dead code is `docs/LOOP.md` §6's
+    concern (HARDENING), not §7's (AUDIT, which is invariant/drift only).
+    Not addressed here for that reason; still flagged, now correctly aimed
+    at the next HARDENING pass (due once `iteration - last_hardening_iteration
+    >= 5`, i.e. iteration ≥ 45) rather than this one.
+  - `M1-09` (the demo harness) is still the topmost unblocked `todo`. The
+    next iteration should pick it up directly, since neither override
+    fires again immediately (`last_hardening_iteration` is now 40,
+    `last_audit_iteration` is now 41).
+- **Follow-ups filed:** none.
