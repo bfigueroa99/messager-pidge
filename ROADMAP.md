@@ -1502,7 +1502,7 @@ change — see resolution note)
 
 ### [ ] M1-09 — The demo harness
 
-**Status:** todo · **Size:** M · **Depends on:** M1-21, M1-22
+**Status:** in-progress · **Size:** M · **Depends on:** M1-21, M1-22
 
 **Why:** A 22-hour flight cannot be tested in real time. This is the
 highest-leverage 40 lines in the repo.
