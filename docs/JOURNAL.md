@@ -4470,3 +4470,67 @@ knowledge survives a context reset.
     HARDENING pass (per the usual override arithmetic) or, if `Q-002` is
     ever answered, `M1-11` becoming the topmost unblocked item.
 - **Follow-ups filed:** none.
+
+## Iteration 43 — 2026-09-10 — LOOP END (no `todo` items remain)
+
+- **Outcome:** paused — this is `docs/LOOP.md` §9's stopping condition, not a
+  failure.
+- **CI:** no `mcp__github__*` tools were available this firing (this session
+  was fired without connector tools, as `docs/LOOP.md` §1 anticipates) — skipped
+  straight to orientation, per that section.
+- **Selection:** `iteration(43) - last_hardening_iteration(40) = 3 < 5`, not
+  hardening. `iteration(43) - last_audit_iteration(41) = 2 < 10`, not audit.
+  Re-read `ROADMAP.md` in full (every `**Status:**` line): 32 items `done`,
+  three parents (`M1-05`, `M1-06`, `M1-08`) `split` with every child `done`,
+  and exactly one item, `M1-11`, `blocked` — on `Q-002`, open since iteration 0.
+  **Zero items are `todo`.** `docs/LOOP.md` §2's selection rule ("the topmost
+  `todo` item… whose dependencies are all `done`") has nothing to select, and
+  no override in the table applies to a blocked-only backlog. This is exactly
+  `docs/LOOP.md` §9's first stopping condition: "no `todo` items remain."
+- **Why `M1-11` cannot be taken as a substitute:** `Q-002` asks for a real
+  Supabase project's `SUPABASE_URL`/`SUPABASE_ANON_KEY`/
+  `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_ACCESS_TOKEN` as repository secrets —
+  credentials only a human can provision. `docs/LOOP.md` §8's 24-hour
+  degrade-to-recommendation rule does not help here: `Q-002`'s own recorded
+  recommendation *is* "keep building against PGlite and defer every item that
+  requires a live backend" — i.e. keep `M1-11` blocked — so there is no safe
+  default action to take in its place. This is a genuine "wait for a person"
+  block, not an unfamiliar API or a hard bug.
+- **Disabling the Routine:** `docs/LOOP.md` §9 says to call
+  `update_trigger({trigger_id, enabled: false})`. No such tool (nor any
+  `mcp__github__*` tool) is present in this session's toolset — it was fired
+  without connector tools, as `docs/LOOP.md` §1 already documents as the
+  normal case. Since the external trigger cannot be reached from inside a
+  session, the repo-level kill switch is the only lever actually available
+  here: `.loop/state.json`'s `paused` field, which `docs/LOOP.md` §0 checks
+  first on every firing and stops on unconditionally. Set `paused: true` this
+  iteration so any further firing (whether or not the external Routine itself
+  ever gets disabled) halts immediately at step 0 doing nothing, rather than
+  re-deriving this same "nothing to select" conclusion on every future fire.
+  **A human still needs to disable the Routine trigger itself** (or answer
+  `Q-002`, which both unblocks `M1-11` and is the natural moment to also flip
+  `paused` back to `false` and resume) — `paused: true` only stops work from
+  inside the repository; it does not stop containers from being spun up.
+- **Verify:** not run. No source, test, or roadmap file changed this
+  iteration — only `docs/JOURNAL.md` (this entry) and `.loop/state.json`
+  (`paused: true`, `iteration: 43`). The last known-green state is `6511837`
+  (iteration 42's own commit), unchanged by this push.
+- **Surprises for the next agent:**
+  - **"No `todo` items remain" and "the topmost `todo` item's dependencies
+    are all `blocked`" are different conditions, and only the former is a
+    stop condition.** Here it is the former — `M1-11` is the *only* pending
+    item and its own status is `blocked`, not `todo`, so there was never a
+    `todo` item to even consider taking. Worth checking the literal `Status:`
+    strings across the whole file, not just "is there unfinished work,"
+    before concluding the loop should continue.
+  - **This session had no `mcp__github__*` tools, confirming
+    `docs/LOOP.md` §1's own note that connector-less firings are the normal
+    case, not an anomaly to investigate.** Nothing was lost by their absence
+    here since there was no CI-red override to check against a real item.
+  - If a future firing arrives with `paused: true` already set, that is
+    working as designed — stop immediately per `docs/LOOP.md` §0, and do not
+    re-run this iteration's analysis from scratch. The condition to watch for
+    is `Q-002` moving from `[open]` to `[answered]` in `docs/QUESTIONS.md`; a
+    human resuming the loop should flip `paused` back to `false` in the same
+    action that unblocks `M1-11`.
+- **Follow-ups filed:** none — `Q-002` already covers the one open blocker.
