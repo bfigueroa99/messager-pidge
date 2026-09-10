@@ -1,5 +1,6 @@
 export * from './constants';
 export * from './types';
+export * from './clock';
 export * from './geo';
 export * from './project';
 export * from './rng';

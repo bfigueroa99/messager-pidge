@@ -17,6 +17,11 @@ var DEFAULT_CONDITIONS = {
   predatorPressure: 0
 };
 
+// packages/flight-sim/src/clock.ts
+function scaledNow(epochMs, realNowMs, scale) {
+  return epochMs + (realNowMs - epochMs) * scale;
+}
+
 // packages/flight-sim/src/geo.ts
 var rad = (d) => d * Math.PI / 180;
 var deg = (r) => r * 180 / Math.PI;
@@ -90,6 +95,189 @@ function arcSegments(a, b, steps) {
   return splitAtAntimeridian(densify(a, b, steps ?? recommendedSteps(a, b)));
 }
 
+// packages/flight-sim/src/speed.ts
+function clamp(v, lo, hi) {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+function effectiveSpeedKmh(i) {
+  const storm = clamp(1 - 0.35 * clamp(i.stormIntensity, 0, 1), 0.5, 1);
+  const fatigue = clamp(1 - 0.15 * (1 - Math.exp(-Math.max(0, i.distanceKm) / 5e3)), 0.7, 1);
+  const wind = clamp(i.windComponentKmh, -MAX_WIND_COMPONENT_KMH, 0);
+  return Math.max(20, BASE_SPEED_KMH * storm * fatigue + wind);
+}
+function durationMs(distanceKm, speedKmh) {
+  const raw = Math.max(0, distanceKm) / Math.max(1, speedKmh) * 36e5;
+  return clamp(raw, MIN_FLIGHT_MS, MAX_FLIGHT_MS);
+}
+
+// packages/flight-sim/src/project.ts
+var MIN_SPAN_DEG = 1e-6;
+function unwrapLongitudes(segments) {
+  const unwrapped = [];
+  let offsetDeg = 0;
+  let prevLon;
+  for (const segment of segments) {
+    const lons = [];
+    for (const point of segment) {
+      if (prevLon !== void 0 && Math.abs(point.lon - prevLon) > 180) {
+        offsetDeg += point.lon - prevLon > 0 ? -360 : 360;
+      }
+      lons.push(point.lon + offsetDeg);
+      prevLon = point.lon;
+    }
+    unwrapped.push(lons);
+  }
+  return unwrapped;
+}
+function computeFit(segments, viewport, paddingRatio) {
+  if (segments.length === 0) {
+    throw new Error("computeFit: segments must be non-empty \u2014 nothing to fit a scale/origin to");
+  }
+  const unwrappedLons = unwrapLongitudes(segments);
+  const allLats = segments.flatMap((segment) => segment.map((point) => point.lat));
+  const allLons = unwrappedLons.flat();
+  const minLat = Math.min(...allLats);
+  const maxLat = Math.max(...allLats);
+  const minLon = Math.min(...allLons);
+  const maxLon = Math.max(...allLons);
+  const spanLat = Math.max(maxLat - minLat, MIN_SPAN_DEG);
+  const spanLon = Math.max(maxLon - minLon, MIN_SPAN_DEG);
+  const clampedPaddingRatio = clamp(paddingRatio, 0, 0.49);
+  const drawableWidth = viewport.width * (1 - 2 * clampedPaddingRatio);
+  const drawableHeight = viewport.height * (1 - 2 * clampedPaddingRatio);
+  const scale = Math.min(drawableWidth / spanLon, drawableHeight / spanLat);
+  const originX = (viewport.width - spanLon * scale) / 2;
+  const originY = (viewport.height - spanLat * scale) / 2;
+  return { scale, originX, originY, minLon, maxLon, minLat, maxLat, unwrappedLons };
+}
+function unwrapLonToFit(lon, fit) {
+  const center = (fit.minLon + fit.maxLon) / 2;
+  let best = lon;
+  let bestDistance = Math.abs(lon - center);
+  for (const candidate of [lon - 360, lon + 360]) {
+    const distance = Math.abs(candidate - center);
+    if (distance < bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+function toScreenPoint(fit, lon, lat) {
+  return {
+    x: fit.originX + (lon - fit.minLon) * fit.scale,
+    y: fit.originY + (fit.maxLat - lat) * fit.scale
+  };
+}
+function projectSegmentsWithFit(segments, fit) {
+  return segments.map(
+    (segment, segmentIndex) => segment.map((point, pointIndex) => toScreenPoint(fit, fit.unwrappedLons[segmentIndex][pointIndex], point.lat))
+  );
+}
+function projectSegments(segments, viewport, paddingRatio) {
+  if (segments.length === 0) return [];
+  return projectSegmentsWithFit(segments, computeFit(segments, viewport, paddingRatio));
+}
+function projectPointWithFit(point, fit) {
+  return toScreenPoint(fit, unwrapLonToFit(point.lon, fit), point.lat);
+}
+function projectPoint(point, segments, viewport, paddingRatio) {
+  if (segments.length === 0) {
+    throw new Error("projectPoint: segments must be non-empty \u2014 nothing to fit the point against");
+  }
+  return projectPointWithFit(point, computeFit(segments, viewport, paddingRatio));
+}
+var REST_ZOOM = 1;
+function maxZoomForMinVisibleKmWithFit(fit, viewport, minVisibleKm) {
+  const centerLat = (fit.minLat + fit.maxLat) / 2;
+  const centerLon = (fit.minLon + fit.maxLon) / 2;
+  const lonWindowDeg = viewport.width / fit.scale;
+  const latWindowDeg = viewport.height / fit.scale;
+  const widthKm = haversineKm(
+    { lat: centerLat, lon: centerLon - lonWindowDeg / 2 },
+    { lat: centerLat, lon: centerLon + lonWindowDeg / 2 }
+  );
+  const heightKm = haversineKm(
+    { lat: centerLat - latWindowDeg / 2, lon: centerLon },
+    { lat: centerLat + latWindowDeg / 2, lon: centerLon }
+  );
+  return clamp(Math.min(widthKm, heightKm) / minVisibleKm, REST_ZOOM, Infinity);
+}
+function maxZoomForMinVisibleKm(segments, viewport, paddingRatio, minVisibleKm) {
+  if (segments.length === 0) return Infinity;
+  return maxZoomForMinVisibleKmWithFit(computeFit(segments, viewport, paddingRatio), viewport, minVisibleKm);
+}
+function allFlown(segments) {
+  return { flown: segments, remaining: segments.map(() => []) };
+}
+function allRemaining(segments) {
+  return { flown: segments.map(() => []), remaining: segments };
+}
+function screenDistance(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+function screenMidpoint(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+function unscaledRadius(baseRadius, zoom) {
+  return baseRadius / zoom;
+}
+function segmentLength(segment) {
+  let length = 0;
+  for (let i = 1; i < segment.length; i++) length += screenDistance(segment[i - 1], segment[i]);
+  return length;
+}
+function splitSegment(segment, targetLength) {
+  if (segment.length === 0) return { flown: [], remaining: [] };
+  const flown = [segment[0]];
+  let cumulative = 0;
+  for (let i = 1; i < segment.length; i++) {
+    const prev = segment[i - 1];
+    const curr = segment[i];
+    const stepLength = screenDistance(prev, curr);
+    if (cumulative + stepLength >= targetLength) {
+      const t = stepLength === 0 ? 0 : (targetLength - cumulative) / stepLength;
+      const splitPoint = { x: prev.x + (curr.x - prev.x) * t, y: prev.y + (curr.y - prev.y) * t };
+      flown.push(splitPoint);
+      return { flown, remaining: [splitPoint, ...segment.slice(i)] };
+    }
+    flown.push(curr);
+    cumulative += stepLength;
+  }
+  return { flown: [...segment], remaining: [] };
+}
+function splitAtProgress(segments, progress) {
+  const clamped = clamp(progress, 0, 1);
+  if (clamped >= 1) return allFlown(segments);
+  if (clamped <= 0) return allRemaining(segments);
+  const lengths = segments.map(segmentLength);
+  const totalLength = lengths.reduce((sum, length) => sum + length, 0);
+  if (totalLength <= 0) return allRemaining(segments);
+  const targetLength = totalLength * clamped;
+  const flown = [];
+  const remaining = [];
+  let consumed = 0;
+  let splitAt = -1;
+  segments.forEach((segment, i) => {
+    if (splitAt >= 0) {
+      flown.push([]);
+      remaining.push(segment);
+      return;
+    }
+    if (consumed + lengths[i] <= targetLength) {
+      flown.push(segment);
+      remaining.push([]);
+      consumed += lengths[i];
+      return;
+    }
+    const split = splitSegment(segment, targetLength - consumed);
+    flown.push(split.flown);
+    remaining.push(split.remaining);
+    splitAt = i;
+  });
+  return { flown, remaining };
+}
+
 // packages/flight-sim/src/rng.ts
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -110,21 +298,6 @@ function hashString(s) {
 }
 function streamFor(seed, ns) {
   return mulberry32((seed ^ hashString(ns)) >>> 0);
-}
-
-// packages/flight-sim/src/speed.ts
-function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-function effectiveSpeedKmh(i) {
-  const storm = clamp(1 - 0.35 * clamp(i.stormIntensity, 0, 1), 0.5, 1);
-  const fatigue = clamp(1 - 0.15 * (1 - Math.exp(-Math.max(0, i.distanceKm) / 5e3)), 0.7, 1);
-  const wind = clamp(i.windComponentKmh, -MAX_WIND_COMPONENT_KMH, 0);
-  return Math.max(20, BASE_SPEED_KMH * storm * fatigue + wind);
-}
-function durationMs(distanceKm, speedKmh) {
-  const raw = Math.max(0, distanceKm) / Math.max(1, speedKmh) * 36e5;
-  return clamp(raw, MIN_FLIGHT_MS, MAX_FLIGHT_MS);
 }
 
 // packages/flight-sim/src/hazard.ts
@@ -304,11 +477,13 @@ export {
   MAX_FLIGHT_MS,
   MAX_WIND_COMPONENT_KMH,
   MIN_FLIGHT_MS,
+  REST_ZOOM,
   R_EARTH_KM,
   SIM_VERSION,
   arcSegments,
   bearingDeg,
   clamp,
+  computeFit,
   deathProbability,
   densify,
   durationMs,
@@ -320,11 +495,22 @@ export {
   haversineKm,
   interpolate,
   lostStateAt,
+  maxZoomForMinVisibleKm,
+  maxZoomForMinVisibleKmWithFit,
   mulberry32,
   pickCause,
   planFlight,
+  projectPoint,
+  projectPointWithFit,
+  projectSegments,
+  projectSegmentsWithFit,
   recommendedSteps,
   sampleDeathFraction,
+  scaledNow,
+  screenDistance,
+  screenMidpoint,
   splitAtAntimeridian,
-  streamFor
+  splitAtProgress,
+  streamFor,
+  unscaledRadius
 };

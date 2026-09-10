@@ -3,16 +3,22 @@ import { useWindowDimensions } from 'react-native';
 import type { PublicFlight } from '@pidge/flight-sim';
 
 import { FlightScreen } from '../src/ui/screens/FlightScreen';
+import { createClockDeps } from '../src/data/clock-deps';
 
 // Placeholder demo data, named honestly as a demo — there is no real
 // send/receive flow yet (M1-07 composes and releases a bird, M1-08 reveals
 // its arrival, both still `todo`) and no server-time-sync mechanism either,
 // so this route cannot yet be handed a real flight id or a real
-// server-corrected clock. `Date.now()` here is this route's own concrete
-// choice as the caller, not a violation of `FlightScreen`'s own "never call
-// Date.now() internally" rule — the same honest-placeholder precedent
-// `loft-picker.tsx`'s `realLoftPickerDeps` already set for a screen with no
-// real backend to wire to yet.
+// server-corrected clock. `createClockDeps(Date.now())` here is this
+// route's own concrete choice as the caller, not a violation of
+// `FlightScreen`'s own "never call Date.now() internally" rule — the same
+// honest-placeholder precedent `loft-picker.tsx`'s `realLoftPickerDeps`
+// already set for a screen with no real backend to wire to yet. It behaves
+// exactly like `Date.now()` unless `EXPO_PUBLIC_E2E` is set (M1-09). The
+// clock is created fresh at mount, not shared as a module-level singleton —
+// `createClockDeps`'s own docs explain why: a clock anchored at app boot
+// keeps compounding a non-1 scale for as long as the process lives, so a
+// screen opened long after launch would read as already finished.
 const DURATION_MS = 79_380_000; // LA-NYC, matching FlightCard's own fixture
 
 function makeDemoFlight(): PublicFlight {
@@ -35,6 +41,7 @@ function makeDemoFlight(): PublicFlight {
 export default function FlightDemoRoute() {
   const { width, height } = useWindowDimensions();
   const flight = useMemo(makeDemoFlight, []);
+  const clock = useMemo(() => createClockDeps(Date.now()), []);
 
   return (
     <FlightScreen
@@ -42,7 +49,7 @@ export default function FlightDemoRoute() {
       originName="Los Angeles"
       destinationName="New York"
       viewport={{ width, height }}
-      now={() => Date.now()}
+      now={clock.now}
     />
   );
 }

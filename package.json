@@ -17,6 +17,7 @@
     "shot": "node scripts/shot.mjs",
     "build:engine": "node scripts/build-engine.mjs",
     "seed:cities": "node scripts/generate-cities-seed.mjs",
+    "demo:run": "node scripts/demo-harness.mjs",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run test:cov && pnpm run gate:roadmap && pnpm run gate:tests"
   },
   "devDependencies": {
