@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "paused": true,
+  "iteration": 43,
+  "current_item": null,
+  "claimed_at": null,
+  "claimed_by": null,
+  "last_outcome": "LOOP END (iteration 43): no mcp__github__* tools available this firing, skipped straight to orientation per docs/LOOP.md §1. Re-read ROADMAP.md in full: 32 items done, three parents (M1-05/M1-06/M1-08) split with every child done, and exactly one item, M1-11, blocked on Q-002 (open since iteration 0, needs a human-provisioned Supabase project's credentials as repo secrets). Zero items are todo. iteration(43) - last_hardening_iteration(40) = 3 < 5, not hardening. iteration(43) - last_audit_iteration(41) = 2 < 10, not audit. No override applies to a blocked-only backlog, and docs/LOOP.md §8's 24-hour degrade-to-recommendation rule does not help: Q-002's own recorded recommendation is to keep M1-11 blocked, so there is no safe default action to substitute. This is docs/LOOP.md §9's stop condition: no todo items remain. Set paused: true since no update_trigger (or any mcp__github__*) tool was present in this session to disable the external Routine directly -- the repo-level kill switch is the only lever reachable from inside a session, and docs/LOOP.md §0 checks it first on every firing. A human still needs to either disable the Routine trigger itself or answer Q-002 (which unblocks M1-11 and is the natural moment to flip paused back to false). No source, test, or roadmap file changed -- only docs/JOURNAL.md and this file. Last known-green commit remains 6511837 (iteration 42).",
+  "consecutive_failures": 0,
+  "last_hardening_iteration": 40,
+  "last_audit_iteration": 41,
+  "test_count_floor": 260,
+  "branch": "claude/app-development-loop-szg7yj",
+  "budget": {
+    "max_iterations": 60,
+    "stop_after": "2026-09-15T00:00:00Z"
+  },
+  "pr_number": 1
+}
