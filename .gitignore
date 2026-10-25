@@ -1,0 +1,44 @@
+node_modules/
+.pnpm-store/
+dist/
+build/
+.tsc-out/
+coverage/
+.expo/
+.expo-shared/
+web-build/
+*.tsbuildinfo
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+artifacts/
+
+# M0-08's export-web/shot cross-process lock and its dev-routes parking spot —
+# both are transient and, on a hard-killed run, could otherwise be left on
+# disk and accidentally committed.
+.metro-cpu.lock/
+.dev-routes-parked/
+
+# env
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# loop scratch
+.loop/tmp/
