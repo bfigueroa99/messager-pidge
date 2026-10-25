@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "paused": true,
+  "paused": false,
   "iteration": 43,
   "current_item": null,
   "claimed_at": null,
@@ -9,7 +9,8 @@
   "consecutive_failures": 0,
   "last_hardening_iteration": 40,
   "last_audit_iteration": 41,
-  "test_count_floor": 260,
+  "plan_exhausted_for": null,
+  "test_count_floor": 292,
   "branch": "claude/app-development-loop-szg7yj",
   "budget": {
     "max_iterations": 60,

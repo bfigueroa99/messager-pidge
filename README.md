@@ -28,9 +28,11 @@ pnpm run verify        # typecheck + lint + coverage + both gates
 ## How this repo is built
 
 It is built by an autonomous loop: every twelve hours a fresh session syncs this
-branch, reads [`docs/LOOP.md`](docs/LOOP.md), takes the topmost `todo` item from
-[`ROADMAP.md`](ROADMAP.md), implements it, verifies it, and pushes. Its context
-is discarded each time, so everything it knows lives in files:
+branch, reads [`docs/LOOP.md`](docs/LOOP.md), asks `node scripts/loop-next.mjs`
+what to do, takes the topmost workable item from [`ROADMAP.md`](ROADMAP.md),
+implements it, verifies it, and pushes. When the roadmap runs dry it proposes
+the next milestone from `docs/PRODUCT.md` instead of stopping. Its context is
+discarded each time, so everything it knows lives in files:
 
 | File | Purpose |
 |---|---|
@@ -42,14 +44,21 @@ is discarded each time, so everything it knows lives in files:
 | [`docs/QUESTIONS.md`](docs/QUESTIONS.md) | Decisions waiting on a human. |
 | `.loop/state.json` | Cursor, budget, and the kill switch. |
 
+**To see why it is or is not running:** `node scripts/loop-next.mjs`. It prints
+what the next firing will do and a `needs a human` list — the same list every
+firing ends its final message with.
+
 **To stop the loop:** set `"paused": true` in `.loop/state.json` and push. The
 next iteration exits in seconds having changed nothing. It is reversible and it
-works from a phone via the GitHub web editor.
+works from a phone via the GitHub web editor. Only a person sets or clears
+`paused`; the loop never does.
 
 **To steer it:** reorder `ROADMAP.md`, insert an item at the top, mark one
-`blocked`, or answer a question in `docs/QUESTIONS.md`. Every iteration resets
-hard to `origin`, so any edit takes effect on the next firing with nothing to
-restart.
+`blocked`, or answer a question in `docs/QUESTIONS.md` (the blocked item is
+picked up on the next firing). A milestone the loop proposed is built 24 hours
+after it was proposed: set an item to `rejected` to veto it, or to `todo` to
+approve it now. Every iteration resets hard to `origin`, so any edit takes
+effect on the next firing with nothing to restart.
 
 ## Architecture
 

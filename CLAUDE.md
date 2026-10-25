@@ -36,6 +36,7 @@ pnpm run lint
 pnpm test
 pnpm test -- --selectProjects flight-sim   # fast: the pure engine only
 pnpm test -- --selectProjects db           # slower: PGlite + real migrations
+node scripts/loop-next.mjs                 # what the loop does next, and what needs a human
 ```
 
 **Nothing runs `verify` for you.** There is no pre-commit hook — `core.hooksPath`

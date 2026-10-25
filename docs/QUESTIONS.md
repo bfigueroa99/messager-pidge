@@ -141,3 +141,41 @@ were sourced, not anything in the repository.
 **Standing note for future agents:** if firings ever go silent again, check the
 Routine's `sources` before touching `docs/LOOP.md`. Three protocol revisions and
 a permission allowlist produced no change; one source entry fixed it.
+
+---
+
+## Q-005 — [open] — 2026-10-25 — infrastructure — the loop has stopped
+
+**Question:** Should the loop run again, and until when?
+
+**Why blocking:** Two things stop it, and neither can be changed from inside a
+session:
+
+1. `budget.stop_after` in `.loop/state.json` is `2026-09-15T00:00:00Z`. It
+   passed five days after the last iteration, so every firing since would have
+   stopped on it at once.
+2. Nothing fires the loop. On 2026-10-25 the Routine named in `Q-004`
+   (`trig_01E64KH7PJ17htCeFnrcpqkf`) answered "not found", and no Routine
+   visible from this account runs this repository's loop.
+
+A third stop is gone: iteration 43 had set `paused: true` itself, because the
+protocol's only answer to an empty roadmap was to stop. `M0-16` replaced that
+rule with a PLAN step and cleared the pause; from now on only a person sets
+`paused`.
+
+**What is needed:**
+- Move `budget.stop_after` forward, and raise `budget.max_iterations` (60, with
+  43 used) if more than 17 iterations are wanted.
+- A Routine firing every twelve hours, sourced from this repository on
+  `claude/app-development-loop-szg7yj`, whose prompt is `.claude/loop.md`.
+
+**What happens next:** the first firing finds nothing workable and runs PLAN
+(`docs/LOOP.md` §11): it proposes the next milestone from `docs/PRODUCT.md`
+(§7 still has the bird's flight home, the Columbarium, the Atlas and Passage's
+dispatch feed with no roadmap item), and builds it from 24 hours later unless
+you veto items. `M1-11` stays blocked on `Q-002`.
+
+**My recommendation if you do not answer:** none the loop can take. This is
+spend, so it never degrades to a default; until it is answered nothing fires.
+
+**Answer:**

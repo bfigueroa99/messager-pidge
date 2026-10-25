@@ -116,3 +116,45 @@ describe('the loop machinery is present and well-formed', () => {
     expect(product).toMatch(/No streaks/);
   });
 });
+
+describe('the protocol points at things that exist', () => {
+  const protocolFiles = ['docs/LOOP.md', '.claude/loop.md'];
+
+  it('[M0-16] every script and pnpm command the protocol tells an iteration to run exists', () => {
+    // An iteration that is told to run a script which is not there improvises,
+    // and improvising is how the loop paused itself in iteration 43.
+    const pkg = JSON.parse(read('package.json'));
+    for (const file of protocolFiles) {
+      const text = read(file);
+      for (const [, script] of text.matchAll(/\b(scripts\/[\w./-]+\.mjs)\b/g)) {
+        expect(`${file} → ${script}: ${existsSync(join(ROOT, script!))}`).toBe(`${file} → ${script}: true`);
+      }
+      for (const [, name] of text.matchAll(/pnpm run ([\w:-]+)/g)) {
+        expect(`${file} → pnpm run ${name}: ${name! in pkg.scripts}`).toBe(`${file} → pnpm run ${name}: true`);
+      }
+    }
+    expect(read('docs/LOOP.md')).toContain('node scripts/loop-next.mjs');
+    expect(read('docs/LOOP.md')).toContain('node scripts/loop-orphans.mjs');
+  });
+
+  it('[M0-18] state.json names the same branch that LOOP.md and the Routine prompt sync to and push to', () => {
+    // On 2026-09-08 an iteration that had been told to work on its session
+    // branch rewrote this field to `claude/tender-thompson-jralin`. Had that
+    // commit reached the loop's branch, every later firing would have synced
+    // one branch and pushed to another.
+    const branch = JSON.parse(read('.loop/state.json')).branch as string;
+    // loop-orphans.mjs reads the constant, not state.json, for that reason.
+    expect(read('scripts/lib/roadmap.mjs')).toContain(`export const LOOP_BRANCH = '${branch}';`);
+    for (const file of protocolFiles) {
+      const synced = [...read(file).matchAll(/git checkout -B (\S+) origin\/(\S+)/g)];
+      expect(synced.length).toBeGreaterThan(0);
+      for (const [, local, remote] of synced) {
+        expect(local).toBe(branch);
+        expect(remote).toBe(branch);
+      }
+      for (const [, target] of read(file).matchAll(/git push origin HEAD:([\w./-]+)/g)) {
+        expect(target).toBe(branch);
+      }
+    }
+  });
+});

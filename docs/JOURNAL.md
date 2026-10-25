@@ -4534,3 +4534,58 @@ knowledge survives a context reset.
     human resuming the loop should flip `paused` back to `false` in the same
     action that unblocks `M1-11`.
 - **Follow-ups filed:** none — `Q-002` already covers the one open blocker.
+
+## Out-of-band — 2026-10-25 — a review of the loop itself (M0-16, M0-17, M0-18)
+
+- **Outcome:** done. Not an iteration — `iteration` stays 43 — but a review,
+  run by hand, of how the loop has behaved and why it stopped.
+- **What the record showed:**
+  - From 2026-08-20 to 2026-09-10 the loop fired every 12 hours and worked:
+    42 claim-to-land cycles (27 items, 8 HARDENING, 4 AUDIT, 3 splits), median
+    13 minutes from claim to landing, no failed iteration after the bootstrap
+    fixes.
+  - Then nothing for 45 days. Iteration 43 found no `todo` item, read §9's
+    "stop when no `todo` items remain" literally and set `paused: true`.
+    `budget.stop_after` (2026-09-15) passed five days later. The Routine named
+    in `Q-004` answered "not found" on 2026-10-25. Meanwhile `docs/PRODUCT.md`
+    §7's flight home, Columbarium, Atlas and Passage dispatch feed had no
+    roadmap item at all: the bootstrap only ever planned M0 and M1.
+  - `M1-22` was built twice. On 2026-09-08 the 00:14 firing worked on its
+    harness branch, `claude/tender-thompson-jralin`, rewrote `branch` in its
+    own `state.json`, and opened draft PR #2; the 12:20 firing, blind to it,
+    rebuilt `M1-22` on the loop's branch. PR #2 is still open.
+  - Iteration 43 wrote "no `mcp__github__*` tools were available this firing"
+    and then rewrote PR #1's description (updated 12:19:38Z, 31 s after its
+    commit), which takes one of them. The tools are deferred.
+  - Iterations 8–42 each spent tool calls re-confirming `Q-003`'s
+    never-scheduled CI signature.
+- **What changed:**
+  - `M0-16` — `node scripts/loop-next.mjs` is §0/§2 as code. A dry roadmap now
+    answers `plan`: §11 proposes the next milestone from PRODUCT.md as
+    `proposed` items that are built 24 hours later unless a person sets them
+    `rejected`. `gate:roadmap` refuses a proposal that does not cite PRODUCT.md,
+    is undated, or names a §8 non-goal, and any open item that depends on a
+    split parent.
+  - `M0-17` — every answer carries a `needs a human` list (paused, budget
+    spent or ending soon, three failures, each blocked item with its open
+    question, proposals under review), and every final message ends with it.
+    A blocked item comes back by itself once its question is `[answered]`.
+  - `M0-18` — push to the loop's branch whatever the session says;
+    `node scripts/loop-orphans.mjs` finds an iteration that landed elsewhere and
+    says whether to adopt it.
+  - `paused` is `false` again: the rule that set it is gone, and the loop no
+    longer sets `paused` at all. `Q-005` asks a person to move the budget and
+    recreate the Routine.
+- **Verify:** see the commit message — `pnpm run verify` green.
+- **Surprises for the next agent:**
+  - **The first firing after the budget is extended will get `plan` from the
+    selector.** That is §11 working, not a malfunction. Propose M2 from
+    PRODUCT.md only — §7's mechanics and §9's commitments, whatever can be
+    verified in this container — and nothing that needs `Q-002`.
+  - `node scripts/loop-orphans.mjs` lists `claude/tender-thompson-jralin` as
+    `superseded` until a person deletes it and closes PR #2. Put that line in
+    the `needs a human` list; do not touch the branch.
+  - Run the two scripts and trust them; do not re-derive selection by reading
+    ROADMAP.md top to bottom. If you disagree with one, that disagreement is
+    the item.
+- **Follow-ups filed:** `Q-005`.
