@@ -143,6 +143,8 @@ describe('the protocol points at things that exist', () => {
     // commit reached the loop's branch, every later firing would have synced
     // one branch and pushed to another.
     const branch = JSON.parse(read('.loop/state.json')).branch as string;
+    // loop-orphans.mjs reads the constant, not state.json, for that reason.
+    expect(read('scripts/lib/roadmap.mjs')).toContain(`export const LOOP_BRANCH = '${branch}';`);
     for (const file of protocolFiles) {
       const synced = [...read(file).matchAll(/git checkout -B (\S+) origin\/(\S+)/g)];
       expect(synced.length).toBeGreaterThan(0);

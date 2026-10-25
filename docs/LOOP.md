@@ -148,8 +148,12 @@ It lists remote branches holding an iteration's claim commit that the loop's
 branch lacks. A branch without a claim commit (a person's, or a review's) is
 never listed, so nothing here adopts unreviewed work.
 
-- **`adoptable`** — the loop's branch has not moved since. That iteration is
-  finished work: `git checkout --detach origin/<branch>`, `pnpm run verify`.
+- **`unfinished`** — the loop's branch has not moved, but the orphan still
+  holds a claim: that session died mid-item, or is still working. Leave it
+  alone; its item is still `todo` here and will be built from this branch.
+- **`adoptable`** — the loop's branch has not moved since, and the orphan's
+  claim was released. That iteration is finished work:
+  `git checkout --detach origin/<branch>`, `pnpm run verify`.
   Green → `git push origin HEAD:claude/app-development-loop-szg7yj` (a
   fast-forward; never force), then on top of it restore `branch` in
   `.loop/state.json` if the orphan changed it, add a journal block naming the
@@ -394,9 +398,14 @@ in its `needs a human` list on every firing, and hands the item back
 
 If a question has been open for more than 24 hours and its recommendation is
 safe, take your own recommendation, record an ADR, and proceed. The loop should
-degrade toward progress, not toward deadlock. A recommendation that means
-"keep waiting" (like `Q-002`'s) is not one you can take: the item stays
-blocked, and the loop works around it.
+degrade toward progress, not toward deadlock. Taking it is an edit the
+selector can see, not a judgement it cannot: under `**Answer:**` write
+`Recommendation taken by iteration N after 24 hours, see ADR-NNN`, change
+`[open]` to `[answered]`, commit, and re-run `node scripts/loop-next.mjs` —
+the item comes back as `via: unblock`. Do this while orienting (§1, step 6),
+before you select. A recommendation that means "keep waiting" (like
+`Q-002`'s) is not one you can take: the item stays blocked, and the loop works
+around it.
 
 ## 9. Ending the loop
 

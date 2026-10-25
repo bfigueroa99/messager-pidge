@@ -181,6 +181,38 @@ describe('loop-next: the roadmap running dry is a planning step, not a stop', ()
     expect(after.via).toBe('promote');
   });
 
+  it('[M0-16] a proposal stamped with a UTC offset gets its full 24 hours, and a zone-less stamp is refused', () => {
+    // 09:30 in Santiago is 12:30Z. Cutting the stamp to its date would end
+    // the window at midnight UTC, most of a day early.
+    const roadmap = DRY_ROADMAP + proposal('M2-01', '2026-09-10T09:30:00-03:00');
+
+    expect(next({ roadmap }, '2026-09-11T06:00:00Z').action).toBe('wait');
+    expect(next({ roadmap }, '2026-09-11T12:31:00Z').action).toBe('item');
+    expect(gate(`# Roadmap\n\n${proposal('M2-01', '2026-10-25T12:00:00')}`).output).toContain('no usable **Proposed:** timestamp');
+  });
+
+  it('[M0-16] a status with a typo is never built: the gate refuses it and the selector skips it', () => {
+    const roadmap = DRY_ROADMAP + item('M2-01', 'Blocked', ' · **Depends on:** none');
+
+    expect(next({ roadmap }, '2026-09-10T12:12:00Z').action).toBe('plan');
+    expect(gate(`# Roadmap\n\n${item('M2-01', 'Blocked', ' · **Depends on:** none')}`).output).toContain('unknown status "Blocked"');
+  });
+
+  it('[M0-16] the plain output carries the product_hash PLAN must record', () => {
+    const root = makeTree({});
+    try {
+      const out = execFileSync('node', [join(SCRIPTS, 'loop-next.mjs')], {
+        env: { ...process.env, LOOP_ROOT: root, LOOP_NOW: '2026-09-10T12:12:00Z' },
+        encoding: 'utf8',
+      });
+
+      expect(out).toMatch(/^loop-next: plan — /);
+      expect(out).toMatch(/^product_hash: [0-9a-f]{16}$/m);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('[M0-16] a rejected proposal is never built and never counts as work', () => {
     const roadmap = DRY_ROADMAP + proposal('M2-01', '2026-09-01T00:00:00Z').replace('**Status:** proposed', '**Status:** rejected');
 
@@ -218,7 +250,7 @@ describe('loop-next: the roadmap running dry is a planning step, not a stop', ()
     expect(uncited.status).toBe(1);
     expect(uncited.output).toContain('no **From:** docs/PRODUCT.md');
     expect(undated.status).toBe(1);
-    expect(undated.output).toContain('no **Proposed:** date');
+    expect(undated.output).toContain('no usable **Proposed:** timestamp');
     expect(nowhere.status).toBe(1);
     expect(nowhere.output).toContain('§12, which does not exist');
   });
@@ -234,14 +266,17 @@ describe('loop-next: the roadmap running dry is a planning step, not a stop', ()
     }
   });
 
-  it('[M0-16] gate:roadmap rejects an open item that depends on a split parent or on an unknown ID', () => {
-    const roadmap = `# Roadmap\n\n${item('M1-08', 'split', '', 'L')}${item('M2-01', 'todo', ' · **Depends on:** M1-08')}${item('M2-02', 'todo', ' · **Depends on:** M7-77')}`;
+  it('[M0-16] gate:roadmap rejects an open item that depends on a split parent, a rejected item, or an unknown ID', () => {
+    const roadmap =
+      `# Roadmap\n\n${item('M1-08', 'split', '', 'L')}${item('M2-01', 'todo', ' · **Depends on:** M1-08')}` +
+      `${item('M2-02', 'todo', ' · **Depends on:** M7-77')}${item('M2-03', 'rejected')}${item('M2-04', 'todo', ' · **Depends on:** M2-03')}`;
 
     const { status, output } = gate(roadmap);
 
     expect(status).toBe(1);
     expect(output).toContain('M2-01 depends on M1-08, which was split');
     expect(output).toContain('M2-02 depends on M7-77, which is not in ROADMAP.md');
+    expect(output).toContain('M2-04 depends on M2-03, which was rejected');
   });
 });
 
@@ -261,6 +296,14 @@ describe('loop-next: every answer says what only a human can unblock', () => {
     expect(d.item).toBe('M1-11');
     expect(d.via).toBe('unblock');
     expect(d.needs_human.join('\n')).not.toContain('Q-002');
+  });
+
+  it('[M0-17] an answer is heard however the person writes the header', () => {
+    for (const header of ['[Answered]', '[ANSWERED]', '[answered 2026-10-26]']) {
+      const d = next({ questions: QUESTIONS_ANSWERED.replace('[answered]', header) }, '2026-09-10T12:12:00Z');
+
+      expect(`${header}: ${d.action} ${d.item}`).toBe(`${header}: item M1-11`);
+    }
   });
 
   it('[M0-17] a blocked item naming a question that was never asked is reported, not silently stuck', () => {
@@ -302,7 +345,7 @@ describe('loop-next: every answer says what only a human can unblock', () => {
     expect(d.needs_human.join('\n')).toContain('3 consecutive failed iterations');
   });
 
-  it('[M0-17] the repository as it stands gets a decision and a non-empty list for a person', () => {
+  it('[M0-17] the repository as it stands gets a decision and a needs-a-human list', () => {
     const out = execFileSync('node', [join(SCRIPTS, 'loop-next.mjs'), '--json'], { encoding: 'utf8' });
     const d = JSON.parse(out) as Decision;
 

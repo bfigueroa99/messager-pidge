@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { PROPOSAL_REVIEW_HOURS, parseQuestions, parseRoadmap, productHash } from './lib/roadmap.mjs';
 
 const ROOT = process.env.LOOP_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), '..');
-const NOW = process.env.LOOP_NOW === undefined ? Date.now() : Date.parse(process.env.LOOP_NOW);
+const NOW_MS = process.env.LOOP_NOW === undefined ? Date.now() : Date.parse(process.env.LOOP_NOW);
 
 const HOUR_MS = 3_600_000;
 // docs/LOOP.md §0's concurrency lease.
@@ -46,7 +46,7 @@ const readText = (rel) => {
   return existsSync(path) ? readFileSync(path, 'utf8') : null;
 };
 
-function decide({ state, items, questions, product, now }) {
+function decide({ state, items, questions, product, nowMs }) {
   const needsHuman = [];
   const byId = new Map(items.map((i) => [i.id, i]));
   const counts = {};
@@ -61,18 +61,18 @@ function decide({ state, items, questions, product, now }) {
 
   const budget = state.budget ?? {};
   const iteration = state.iteration ?? 0;
-  const stopAfter = Date.parse(budget.stop_after ?? '');
+  const stopAfterMs = Date.parse(budget.stop_after ?? '');
   let budgetSpent = null;
   if (typeof budget.max_iterations === 'number' && iteration >= budget.max_iterations) {
     budgetSpent = `iteration ${iteration} has reached budget.max_iterations (${budget.max_iterations})`;
     needsHuman.push(`The budget is spent: ${budgetSpent}. Raise budget.max_iterations in .loop/state.json to continue.`);
-  } else if (!Number.isNaN(stopAfter) && now > stopAfter) {
-    const days = Math.floor((now - stopAfter) / (24 * HOUR_MS));
+  } else if (!Number.isNaN(stopAfterMs) && nowMs > stopAfterMs) {
+    const days = Math.floor((nowMs - stopAfterMs) / (24 * HOUR_MS));
     budgetSpent = `budget.stop_after (${budget.stop_after}) passed ${days} day(s) ago`;
     needsHuman.push(`The budget is spent: ${budgetSpent}. Move it forward in .loop/state.json to continue.`);
   } else {
-    if (!Number.isNaN(stopAfter) && stopAfter - now <= BUDGET_WARN_MS) {
-      const hours = Math.round((stopAfter - now) / HOUR_MS);
+    if (!Number.isNaN(stopAfterMs) && stopAfterMs - nowMs <= BUDGET_WARN_MS) {
+      const hours = Math.round((stopAfterMs - nowMs) / HOUR_MS);
       needsHuman.push(`The budget ends at ${budget.stop_after}, in about ${hours} hour(s). Move budget.stop_after forward if the loop should keep going.`);
     }
     if (typeof budget.max_iterations === 'number' && budget.max_iterations - iteration <= BUDGET_WARN_ITERATIONS) {
@@ -102,10 +102,10 @@ function decide({ state, items, questions, product, now }) {
   }
 
   const reviewMs = PROPOSAL_REVIEW_HOURS * HOUR_MS;
-  const reviewEnds = (item) => Date.parse(item.proposedAt ?? '') + reviewMs;
-  const underReview = items.filter((i) => i.status === 'proposed' && !(reviewEnds(i) <= now));
+  const reviewEndsAt = (item) => item.proposedAtMs + reviewMs;
+  const underReview = items.filter((i) => i.status === 'proposed' && !(reviewEndsAt(i) <= nowMs));
   if (underReview.length > 0) {
-    const until = new Date(Math.max(...underReview.map(reviewEnds).filter(Number.isFinite), now)).toISOString();
+    const until = new Date(Math.max(...underReview.map(reviewEndsAt).filter(Number.isFinite), nowMs)).toISOString();
     needsHuman.push(
       `${underReview.length} proposed item(s) (${underReview.map((i) => i.id).join(', ')}) are open for review until ${until}. ` +
         'In ROADMAP.md set **Status:** rejected to veto one, or todo to approve it now; after that the loop builds them.',
@@ -128,8 +128,8 @@ function decide({ state, items, questions, product, now }) {
   if (failures >= MAX_CONSECUTIVE_FAILURES) return answer('stop', `${failures} consecutive failures`);
 
   const holder = state.current_item ?? null;
-  const claimedAt = Date.parse(state.claimed_at ?? '');
-  if (holder !== null && !Number.isNaN(claimedAt) && now - claimedAt < LIVE_CLAIM_MS) {
+  const claimedAtMs = Date.parse(state.claimed_at ?? '');
+  if (holder !== null && !Number.isNaN(claimedAtMs) && nowMs - claimedAtMs < LIVE_CLAIM_MS) {
     return answer('stop', `${holder} was claimed at ${state.claimed_at}; another iteration is live`);
   }
   const stolen = holder !== null ? { stale_claim: holder } : {};
@@ -152,7 +152,7 @@ function decide({ state, items, questions, product, now }) {
     if (item.status === 'blocked' && item.blockedBy.length > 0 && !item.blockedBy.some((q) => questions.get(q)?.state !== 'answered')) {
       return 'unblock';
     }
-    if (item.status === 'proposed' && reviewEnds(item) <= now) return 'promote';
+    if (item.status === 'proposed' && reviewEndsAt(item) <= nowMs) return 'promote';
     return null;
   };
   const depsDone = (item) => item.dependsOn.every((d) => byId.get(d)?.status === 'done');
@@ -195,13 +195,19 @@ const decision = decide({
   items: parseRoadmap(roadmapText),
   questions: parseQuestions(readText('docs/QUESTIONS.md') ?? ''),
   product: readText('docs/PRODUCT.md'),
-  now: NOW,
+  nowMs: NOW_MS,
 });
 
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify(decision, null, 2));
 } else {
   console.log(`loop-next: ${decision.action}${decision.item ? ` ${decision.item}` : ''} — ${decision.reason}`);
+  // docs/LOOP.md tells an iteration to act on these, so the plain output
+  // must carry them too: PLAN records product_hash verbatim (§11), and a
+  // stolen claim is journalled (§0).
+  if (decision.via) console.log(`via: ${decision.via}`);
+  if (decision.stale_claim) console.log(`stale_claim: ${decision.stale_claim} (abandoned by an earlier iteration; journal it)`);
+  if (decision.product_hash) console.log(`product_hash: ${decision.product_hash}`);
   if (decision.needs_human.length > 0) {
     console.log('\nneeds a human:');
     for (const line of decision.needs_human) console.log(`  - ${line}`);

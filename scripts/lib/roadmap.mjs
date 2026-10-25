@@ -28,6 +28,24 @@ export const STATUSES = Object.freeze([
 /** How long a proposal waits for a human veto before the loop may build it. */
 export const PROPOSAL_REVIEW_HOURS = 24;
 
+/**
+ * The loop's integration branch. A constant, not read from
+ * `.loop/state.json`, because state.json is exactly what a stray iteration
+ * rewrites: on 2026-09-08 one set `branch` to its own session branch.
+ * `tests/repo-contract.test.ts` pins state.json, docs/LOOP.md and
+ * .claude/loop.md to this value.
+ */
+export const LOOP_BRANCH = 'claude/app-development-loop-szg7yj';
+
+// A full ISO 8601 timestamp with a zone. A bare date, or a time with no zone,
+// would silently move a proposal's review window by up to a day.
+const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Epoch ms of a zoned ISO 8601 timestamp, or NaN for anything looser. */
+export function timestampMs(text) {
+  return typeof text === 'string' && TIMESTAMP_RE.test(text) ? Date.parse(text) : Number.NaN;
+}
+
 // ### [x] M1-04 — Title      /      ### [ ] M1-05 — Title
 // Same shape gate:roadmap has always matched, so the two never disagree on
 // what counts as an item.
@@ -37,9 +55,14 @@ const ID_RE = /[A-Z]\d+-\d+/g;
 const QUESTION_ID_RE = /Q-\d+/g;
 
 /**
+ * `status` is the raw word after `**Status:**`, case and all, so a typo such
+ * as `Blocked` reaches validateRoadmap() as an unknown status instead of
+ * quietly falling back to the checkbox and being built as a `todo`.
+ *
  * @returns {Array<{id: string, box: ' ' | 'x', title: string, status: string,
  *   size: string | null, dependsOn: string[], blockedBy: string[],
- *   proposedAt: string | null, from: string | null, line: number}>}
+ *   proposed: string | null, proposedAtMs: number, from: string | null,
+ *   body: string, line: number}>}
  */
 export function parseRoadmap(text) {
   const items = [];
@@ -52,11 +75,11 @@ export function parseRoadmap(text) {
     const next = rest.search(NEXT_ITEM_RE);
     const body = next === -1 ? rest : rest.slice(0, next);
 
-    const status = body.match(/^\*\*Status:\*\*\s*([a-z-]+)/m)?.[1] ?? (box === 'x' ? 'done' : 'todo');
+    const status = body.match(/^\*\*Status:\*\*\s*(\S+)/m)?.[1] ?? (box === 'x' ? 'done' : 'todo');
     const size = body.match(/\*\*Size:\*\*\s*([SML])\b/)?.[1] ?? null;
     const dependsLine = body.match(/\*\*Depends on:\*\*\s*([^\n·]*)/)?.[1] ?? '';
     const blockedLine = body.match(/\*\*Blocked by:\*\*\s*([^\n·]*)/)?.[1] ?? '';
-    const proposedAt = body.match(/\*\*Proposed:\*\*\s*(\d{4}-\d{2}-\d{2}(?:T[0-9:.]+Z)?)/)?.[1] ?? null;
+    const proposed = body.match(/\*\*Proposed:\*\*\s*(\S+)/)?.[1] ?? null;
     const from = body.match(/^\*\*From:\*\*\s*(.+)$/m)?.[1]?.trim() ?? null;
 
     items.push({
@@ -67,8 +90,10 @@ export function parseRoadmap(text) {
       size,
       dependsOn: dependsLine.match(ID_RE) ?? [],
       blockedBy: blockedLine.match(QUESTION_ID_RE) ?? [],
-      proposedAt,
+      proposed,
+      proposedAtMs: timestampMs(proposed),
       from,
+      body,
       line: text.slice(0, match.index).split('\n').length,
     });
   }
@@ -77,14 +102,17 @@ export function parseRoadmap(text) {
 
 /**
  * `## Q-002 — [open] — iteration 0 — item M1-08` → `{ id, state, question }`.
+ * `state` is lowercased and anything after its first word is dropped, so a
+ * person who writes `[Answered]` or `[answered 2026-10-26]` is still heard.
  * @returns {Map<string, {id: string, state: string, question: string}>}
  */
 export function parseQuestions(text) {
   const questions = new Map();
-  const headRe = /^## (Q-\d+)\s+—\s+\[([a-z]+)\]/gm;
+  const headRe = /^## (Q-\d+)\s+—\s+\[\s*([A-Za-z]+)[^\]\n]*\]/gm;
   let match;
   while ((match = headRe.exec(text)) !== null) {
-    const [, id, state] = match;
+    const [, id, rawState] = match;
+    const state = rawState.toLowerCase();
     const rest = text.slice(match.index + match[0].length);
     const next = rest.search(/^## Q-\d+/m);
     const body = next === -1 ? rest : rest.slice(0, next);
@@ -141,6 +169,8 @@ export function validateRoadmap(items, product) {
         errors.push(`${item.id} depends on ${dep}, which is not in ROADMAP.md.`);
       } else if (target.status === 'split') {
         errors.push(`${item.id} depends on ${dep}, which was split. Point it at the child that finishes the work.`);
+      } else if (target.status === 'rejected') {
+        errors.push(`${item.id} depends on ${dep}, which was rejected. Reject ${item.id} too, or drop the dependency.`);
       }
     }
 
@@ -149,8 +179,10 @@ export function validateRoadmap(items, product) {
     }
 
     if (item.status === 'proposed') {
-      if (item.proposedAt === null) {
-        errors.push(`${item.id} is proposed but has no **Proposed:** date, so its review window never opens.`);
+      if (Number.isNaN(item.proposedAtMs)) {
+        errors.push(
+          `${item.id} is proposed but has no usable **Proposed:** timestamp (ISO 8601 with a zone, e.g. 2026-10-25T12:00:00Z), so its review window never opens.`,
+        );
       }
       const cited = item.from?.match(/docs\/PRODUCT\.md\s+§(\d+)/)?.[1];
       if (cited === undefined) {

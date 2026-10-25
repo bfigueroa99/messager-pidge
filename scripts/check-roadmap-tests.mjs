@@ -51,25 +51,15 @@ const allTestNames = testSources.flatMap(testNames).join('\n');
 
 const roadmap = readFileSync(join(ROOT, 'ROADMAP.md'), 'utf8');
 
-// ### [x] M1-04 — Title      /      ### [ ] M1-05 — Title
-const itemRe = /^### \[([ x])\]\s+([A-Z]\d+-\d+)\s+—\s+(.+)$/gm;
+// One parser for the gate and the selector (scripts/lib/roadmap.mjs), so the
+// two can never disagree on where an item starts or what its status is.
+const items = parseRoadmap(roadmap);
 
 const errors = [];
 let done = 0;
 let pending = 0;
 
-let match;
-while ((match = itemRe.exec(roadmap)) !== null) {
-  const [, box, id, title] = match;
-
-  // The item's body runs to the next heading or end of file.
-  const start = match.index + match[0].length;
-  const nextHeading = roadmap.slice(start).search(/^### \[[ x]\]/m);
-  const body = nextHeading === -1 ? roadmap.slice(start) : roadmap.slice(start, start + nextHeading);
-
-  const statusMatch = body.match(/^\*\*Status:\*\*\s*(\S+)/m);
-  const status = statusMatch ? statusMatch[1] : box === 'x' ? 'done' : 'todo';
-
+for (const { box, id, title, status, body } of items) {
   if (status !== 'done') {
     pending++;
     if (box === 'x') {
@@ -104,9 +94,9 @@ while ((match = itemRe.exec(roadmap)) !== null) {
 }
 
 // The structure loop-next.mjs selects from: known statuses, no dependency on
-// a split parent, and proposals that cite docs/PRODUCT.md (M0-16).
+// a split or rejected item, and proposals that cite docs/PRODUCT.md (M0-16).
 const productPath = join(ROOT, 'docs', 'PRODUCT.md');
-errors.push(...validateRoadmap(parseRoadmap(roadmap), existsSync(productPath) ? readFileSync(productPath, 'utf8') : null));
+errors.push(...validateRoadmap(items, existsSync(productPath) ? readFileSync(productPath, 'utf8') : null));
 
 if (errors.length > 0) {
   console.error('\ngate:roadmap FAILED\n');

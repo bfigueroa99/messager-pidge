@@ -112,6 +112,36 @@ describe('loop-orphans: an iteration that landed on the wrong branch is found', 
     }
   });
 
+  it('[M0-18] an orphan that still holds its claim is unfinished, never adoptable', () => {
+    const { root, work } = setup();
+    try {
+      // A session that claimed and then died, or is still working.
+      git(work, 'checkout', '-q', '-b', 'claude/tender-thompson-jralin', `origin/${LOOP_BRANCH}`);
+      writeFileSync(join(work, '.loop', 'state.json'), JSON.stringify({ branch: LOOP_BRANCH, current_item: 'M9-01' }));
+      writeFileSync(join(work, 'ROADMAP.md'), roadmap('in-progress'));
+      git(work, 'commit', '-q', '-am', 'M9-01: claim');
+      git(work, 'push', '-q', 'origin', 'claude/tender-thompson-jralin');
+      git(work, 'checkout', '-q', LOOP_BRANCH);
+
+      expect(orphans(work)).toEqual([expect.objectContaining({ kind: 'unfinished', behind: 0 })]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('[M0-18] the loop branch is not taken from the checked-out state.json, which a stray iteration rewrites', () => {
+    const { root, work } = setup();
+    try {
+      iterationOn(work, 'claude/tender-thompson-jralin');
+      // The adoption flow checks the orphan out, rewritten branch and all.
+      writeFileSync(join(work, '.loop', 'state.json'), JSON.stringify({ branch: 'claude/tender-thompson-jralin' }));
+
+      expect(orphans(work)).toEqual([expect.objectContaining({ branch: 'claude/tender-thompson-jralin', kind: 'adoptable' })]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('[M0-18] a branch with no claim commit is never treated as loop work, so review branches are never adopted', () => {
     const { root, work } = setup();
     try {

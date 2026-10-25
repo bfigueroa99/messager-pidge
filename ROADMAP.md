@@ -511,9 +511,10 @@ iteration re-derived by reading 1,600 lines of roadmap by eye.
 - A `proposed` status, written only by a new PLAN iteration (`docs/LOOP.md`
   §11) from PRODUCT.md, built after a 24-hour veto window; `rejected` for a
   person's veto; `plan_exhausted_for` so a fully planned spec is a real stop.
-- `gate:roadmap` refuses an unknown status, a dependency on a split parent or
-  an unknown ID, and a proposal without a PRODUCT.md citation, a timestamp, or
-  with a non-goal in its title.
+- `gate:roadmap` iterates items through the same parser, and refuses an
+  unknown status, a dependency on a split or rejected item or an unknown ID,
+  and a proposal without a PRODUCT.md citation, a zoned timestamp, or with a
+  non-goal in its title.
 
 **Do NOT:**
 - Do not let the loop write product scope that PRODUCT.md does not ask for.
@@ -535,8 +536,13 @@ iteration re-derived by reading 1,600 lines of roadmap by eye.
 - [x] gate:roadmap rejects a proposal with no PRODUCT.md citation, no date, or
   a citation to a missing section
 - [x] gate:roadmap rejects a proposal named after a PRODUCT.md non-goal
-- [x] gate:roadmap rejects an open item that depends on a split parent or on an
-  unknown ID
+- [x] gate:roadmap rejects an open item that depends on a split parent, a
+  rejected item, or an unknown ID
+- [x] a proposal stamped with a UTC offset gets its full 24 hours, and a
+  zone-less stamp is refused
+- [x] a status with a typo is never built: the gate refuses it and the selector
+  skips it
+- [x] the plain output carries the product_hash PLAN must record
 - [x] every script and pnpm command the protocol tells an iteration to run
   exists
 
@@ -578,6 +584,7 @@ then edited PR #1 with one: the tools are deferred and must be searched for.
 - [x] the budget warns days before it runs out, without stopping
 - [x] paused stops the loop and is reported as the switch only a person flips
 - [x] three consecutive failures stop the loop and ask for a person
+- [x] an answer is heard however the person writes the header
 - [x] a blocked item naming a question that was never asked is reported, not
   silently stuck
 
@@ -601,9 +608,11 @@ on 2026-10-25.
 **Do:**
 - `docs/LOOP.md` §0: push to the loop's branch whatever the session says.
 - `scripts/loop-orphans.mjs`: remote branches holding an iteration's claim
-  commit that the loop's branch lacks — `adoptable` (fast-forward after
-  verify), `superseded`, or `diverged`. A branch with no claim commit is never
-  loop work.
+  commit that the loop's branch lacks — `adoptable` (claim released;
+  fast-forward after verify), `unfinished` (claim still held), `superseded`,
+  or `diverged`. A branch with no claim commit is never loop work, and the
+  loop's branch comes from a constant, not from the state.json an orphan
+  rewrites.
 - A repo test that `state.json`'s `branch` is the one the protocol syncs to.
 
 **Do NOT:**
@@ -614,12 +623,16 @@ on 2026-10-25.
   branch has not moved
 - [x] once the loop branch has built the same item itself, the orphan is
   reported as superseded
+- [x] an orphan that still holds its claim is unfinished, never adoptable
+- [x] the loop branch is not taken from the checked-out state.json, which a
+  stray iteration rewrites
 - [x] a branch with no claim commit is never treated as loop work
 - [x] state.json names the same branch that LOOP.md and the Routine prompt
   sync to and push to
 
-**Touches:** `scripts/loop-orphans.mjs`, `tests/loop-orphans.test.ts`,
-`tests/repo-contract.test.ts`, `docs/LOOP.md`, `.claude/loop.md`
+**Touches:** `scripts/loop-orphans.mjs`, `scripts/lib/roadmap.mjs`
+(`LOOP_BRANCH`), `tests/loop-orphans.test.ts`, `tests/repo-contract.test.ts`,
+`docs/LOOP.md`, `.claude/loop.md`
 
 ---
 
