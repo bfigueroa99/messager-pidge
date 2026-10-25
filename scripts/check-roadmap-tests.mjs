@@ -11,9 +11,10 @@
  * It works because ROADMAP.md's acceptance criteria are written to BE test
  * names. See docs/LOOP.md §3.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseRoadmap, validateRoadmap } from './lib/roadmap.mjs';
 
 // Overridable so tests can point the gate at a throwaway fixture tree instead
 // of the real repository.
@@ -101,6 +102,11 @@ while ((match = itemRe.exec(roadmap)) !== null) {
     );
   }
 }
+
+// The structure loop-next.mjs selects from: known statuses, no dependency on
+// a split parent, and proposals that cite docs/PRODUCT.md (M0-16).
+const productPath = join(ROOT, 'docs', 'PRODUCT.md');
+errors.push(...validateRoadmap(parseRoadmap(roadmap), existsSync(productPath) ? readFileSync(productPath, 'utf8') : null));
 
 if (errors.length > 0) {
   console.error('\ngate:roadmap FAILED\n');

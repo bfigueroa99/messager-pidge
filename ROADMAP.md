@@ -1,11 +1,16 @@
 # Roadmap
 
-Ordered. The loop always takes the **topmost item with status `todo` whose
-dependencies are all `done`**. You steer by reordering, editing, or setting an
-item to `blocked` — see `docs/LOOP.md` §6 of "how you control it". Never delete a
-`done` item; the history is the audit trail.
+Ordered. The loop always takes the **topmost workable item whose dependencies
+are all `done`** — `docs/LOOP.md` §2 says what "workable" means, and
+`node scripts/loop-next.mjs` says which item that is right now. You steer by
+reordering, editing, or setting an item to `blocked` — see "To steer it" in
+`README.md`. Never delete a `done` item; the history is the audit trail.
 
-- **Status:** `todo` · `in-progress` · `blocked` · `done`
+- **Status:** `todo` · `in-progress` · `blocked` · `done` · `split` (replaced
+  by the children its resolution note names) · `proposed` (written by a PLAN
+  iteration from `docs/PRODUCT.md`, `docs/LOOP.md` §11; built once 24 hours
+  have passed since its `**Proposed:**` timestamp) · `rejected` (a person's
+  veto of a proposal; kept so it is never proposed again)
 - **Size:** `S` (under an hour) · `M` (one session) · `L` (**must be split
   before starting** — splitting is itself a complete iteration)
 - Acceptance criteria are written to **be test names**. A criterion may only be
@@ -481,6 +486,140 @@ second one avoids racing it, see the journal), `package.json` (`shot` script,
 the new scripts), `.github/workflows/ci.yml`, `docs/DECISIONS.md` (ADR-009),
 `ROADMAP.md` (M0-07's own `Verify with` line, which the export wrapper made
 stale).
+
+---
+
+### [x] M0-16 — When the roadmap runs dry, plan the next milestone instead of pausing
+
+**Status:** done · **Size:** M · **Depends on:** M0-06
+**Found by:** an out-of-band review of the loop, 2026-10-25 (`docs/JOURNAL.md`)
+
+**Why:** On 2026-09-10 iteration 43 found zero `todo` items — everything
+`done` or `split`, and `M1-11` `blocked` on `Q-002` — read `docs/LOOP.md` §9's
+"stop when no `todo` items remain" literally, set `paused: true`, and the loop
+never ran again. Meanwhile `docs/PRODUCT.md` §7 still described the bird's
+flight home, the Columbarium, the Atlas and Passage's dispatch feed, none of
+which had a roadmap item. The bootstrap only ever planned M0 and M1, and the
+protocol had no step for what comes after. Selection was also prose an
+iteration re-derived by reading 1,600 lines of roadmap by eye.
+
+**Do:**
+- `scripts/lib/roadmap.mjs`: one parser for ROADMAP.md, QUESTIONS.md and
+  PRODUCT.md, plus the structural rules selection relies on.
+- `scripts/loop-next.mjs`: `docs/LOOP.md` §0 and §2 as code — `stop`, `wait`,
+  `hardening`, `audit`, `split`, `item` or `plan`.
+- A `proposed` status, written only by a new PLAN iteration (`docs/LOOP.md`
+  §11) from PRODUCT.md, built after a 24-hour veto window; `rejected` for a
+  person's veto; `plan_exhausted_for` so a fully planned spec is a real stop.
+- `gate:roadmap` refuses an unknown status, a dependency on a split parent or
+  an unknown ID, and a proposal without a PRODUCT.md citation, a timestamp, or
+  with a non-goal in its title.
+
+**Do NOT:**
+- Do not let the loop write product scope that PRODUCT.md does not ask for.
+- Do not make a dry roadmap loop forever: a spec with nothing left to plan
+  stops until a person changes it.
+
+**Acceptance criteria:**
+- [x] the state that paused the loop on 2026-09-10 now answers plan
+- [x] the topmost todo whose dependencies are done is selected, skipping one
+  behind a blocked item
+- [x] a size-L item is split before anything is built
+- [x] hardening and audit fire on schedule, hardening first
+- [x] a live claim stops the firing, and a stale one is resumed rather than
+  skipped forever
+- [x] a proposal waits out its review window, then is built
+- [x] a rejected proposal is never built and never counts as work
+- [x] once PRODUCT.md is recorded as fully planned the loop stops instead of
+  re-planning, until the spec changes
+- [x] gate:roadmap rejects a proposal with no PRODUCT.md citation, no date, or
+  a citation to a missing section
+- [x] gate:roadmap rejects a proposal named after a PRODUCT.md non-goal
+- [x] gate:roadmap rejects an open item that depends on a split parent or on an
+  unknown ID
+- [x] every script and pnpm command the protocol tells an iteration to run
+  exists
+
+**Touches:** `scripts/lib/roadmap.mjs`, `scripts/loop-next.mjs`,
+`scripts/check-roadmap-tests.mjs`, `tests/loop-next.test.ts`,
+`tests/repo-contract.test.ts`, `docs/LOOP.md`, `.claude/loop.md`,
+`ROADMAP.md`, `README.md`, `CLAUDE.md`
+
+---
+
+### [x] M0-17 — Say what only a human can unblock, on every firing
+
+**Status:** done · **Size:** S · **Depends on:** M0-16
+**Found by:** an out-of-band review of the loop, 2026-10-25 (`docs/JOURNAL.md`)
+
+**Why:** The loop's budget ran out on 2026-09-15, five days after it paused,
+and `Q-002` has been open since iteration 0. The only record of either was a
+field in `.loop/state.json` and a question in `docs/QUESTIONS.md` that nobody
+was told to read. `QUESTIONS.md` also promises "the next iteration picks it up"
+once a question is answered, but nothing turned a `blocked` item back into
+work. Separately, iteration 43 recorded that no GitHub tools were available and
+then edited PR #1 with one: the tools are deferred and must be searched for.
+
+**Do:**
+- `loop-next.mjs` returns a `needs_human` list with every answer: `paused`,
+  a spent budget (and a warning three days or five iterations ahead), three
+  consecutive failures, each blocked item with its open question, proposals
+  inside their review window, a fully planned spec.
+- A `blocked` item whose questions are all `[answered]` is workable again.
+- `docs/LOOP.md`: every final message ends with that list; PR #1 gets a
+  "Needs a human" section; look for deferred connector tools before deciding
+  they are absent; skip the CI check while `Q-003` is open.
+
+**Acceptance criteria:**
+- [x] a blocked item is reported with its open question, every firing
+- [x] a blocked item whose question was answered is picked up on the next
+  firing
+- [x] a spent budget stops the loop and says which field to move
+- [x] the budget warns days before it runs out, without stopping
+- [x] paused stops the loop and is reported as the switch only a person flips
+- [x] three consecutive failures stop the loop and ask for a person
+- [x] a blocked item naming a question that was never asked is reported, not
+  silently stuck
+
+**Touches:** `scripts/loop-next.mjs`, `tests/loop-next.test.ts`,
+`docs/LOOP.md`, `docs/QUESTIONS.md`
+
+---
+
+### [x] M0-18 — Adopt an iteration that landed on the wrong branch
+
+**Status:** done · **Size:** S · **Depends on:** M0-16
+**Found by:** an out-of-band review of the loop, 2026-10-25 (`docs/JOURNAL.md`)
+
+**Why:** On 2026-09-08 a fired session's harness told it to develop on
+`claude/tender-thompson-jralin`. It claimed and finished `M1-22` there, verify
+green, rewrote `branch` in its own `.loop/state.json`, and opened draft PR #2
+against `main`. The loop's branch never saw it, so twelve hours later the next
+firing selected `M1-22` again and built it a second time. PR #2 was still open
+on 2026-10-25.
+
+**Do:**
+- `docs/LOOP.md` §0: push to the loop's branch whatever the session says.
+- `scripts/loop-orphans.mjs`: remote branches holding an iteration's claim
+  commit that the loop's branch lacks — `adoptable` (fast-forward after
+  verify), `superseded`, or `diverged`. A branch with no claim commit is never
+  loop work.
+- A repo test that `state.json`'s `branch` is the one the protocol syncs to.
+
+**Do NOT:**
+- Do not adopt anything without a claim commit, and never force-push.
+
+**Acceptance criteria:**
+- [x] an iteration pushed to a session branch is adoptable while the loop
+  branch has not moved
+- [x] once the loop branch has built the same item itself, the orphan is
+  reported as superseded
+- [x] a branch with no claim commit is never treated as loop work
+- [x] state.json names the same branch that LOOP.md and the Routine prompt
+  sync to and push to
+
+**Touches:** `scripts/loop-orphans.mjs`, `tests/loop-orphans.test.ts`,
+`tests/repo-contract.test.ts`, `docs/LOOP.md`, `.claude/loop.md`
 
 ---
 

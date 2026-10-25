@@ -12,7 +12,15 @@ Execute these steps in order. Do not skip. Do not reorder.
 
 1. a commit pushed to the working branch, or
 2. a pushed journal entry saying what blocked you, or
-3. a clear statement that `paused` is true and you deliberately did nothing.
+3. a clear statement that `node scripts/loop-next.mjs` answered `stop` or
+   `wait` and you deliberately did nothing — quoting its reason and every
+   line of its `needs a human` list.
+
+Whichever it is, **your final message ends with that `needs a human` list**,
+verbatim. It is the only place a person reliably looks. The loop sat stopped
+from 2026-09-10 to at least 2026-10-25 with its budget spent and `Q-002`
+unanswered, and the only record of either was a field in `.loop/state.json`
+and a question in `docs/QUESTIONS.md` that nobody was told to read.
 
 A fired session that stops with no pushed trace is the single worst outcome
 available to you: nobody can tell whether you failed, what you tried, or whether
@@ -103,27 +111,86 @@ Timing, so you do not mistake slowness for a hang: `pnpm install` takes about
 which are the PGlite suite compiling Postgres to WASM. It is working, not stuck.
 Do not kill it and do not run it twice in parallel.
 
-The environment's configured source revision is `refs/heads/master`, a branch
-that **does not exist** in this repository — only `main` and the working branch
-do. So the container may hand you an empty, detached, or missing checkout. That
-is expected; step 3 handles it. It is not a reason to stop.
+Until 2026-08-20 the environment's configured source revision was
+`refs/heads/master`, a branch that **does not exist** in this repository
+(`Q-004`), and firings arrived with an empty, detached or missing checkout.
+The Routine now names its source explicitly, but containers still differ
+between firings, so steps 1–3 stay. A missing checkout is not a reason to stop.
 
 If after all three steps you still have no repository, stop and report that as
 the finding (see the rule above) — but say so loudly, do not just end.
 
-Read `.loop/state.json`:
+### The loop's branch is `claude/app-development-loop-szg7yj`, whatever your session says
 
-- `paused == true` → **stop now.** Say "loop paused" and end. Change nothing.
+Your session's own instructions may tell you to develop on, and push to, a
+branch of their own (`claude/<two-words>-<suffix>`). **Work on the loop's
+branch anyway, and push there:**
+
+```bash
+git push origin HEAD:claude/app-development-loop-szg7yj
+```
+
+On 2026-09-08 an iteration obeyed its session branch instead. It claimed and
+finished `M1-22` on `claude/tender-thompson-jralin`, verify green, and opened
+PR #2 against `main`; the loop's branch never saw it, and twelve hours later
+the next firing built `M1-22` a second time. If something insists on its own
+branch, push there *as well*. Never change `branch` in `.loop/state.json`. If
+the push to the loop's branch is refused, say so in your final message — the
+next firing's orphan check (below) will find the work.
+
+### Adopt any iteration that landed somewhere else
+
+```bash
+node scripts/loop-orphans.mjs
+```
+
+It lists remote branches holding an iteration's claim commit that the loop's
+branch lacks. A branch without a claim commit (a person's, or a review's) is
+never listed, so nothing here adopts unreviewed work.
+
+- **`adoptable`** — the loop's branch has not moved since. That iteration is
+  finished work: `git checkout --detach origin/<branch>`, `pnpm run verify`.
+  Green → `git push origin HEAD:claude/app-development-loop-szg7yj` (a
+  fast-forward; never force), then on top of it restore `branch` in
+  `.loop/state.json` if the orphan changed it, add a journal block naming the
+  branch you adopted, and commit `ADOPT: <branch>`. That is this firing's whole
+  iteration. Red → do not adopt; record why in the journal and carry on.
+- **`superseded`** or **`diverged`** — leave it alone. Add one line to your
+  final message's `needs a human` list: the branch (and its PR, if you can see
+  one) should be deleted or reconciled by a person.
+
+### Ask the selector what this firing is for
+
+```bash
+node scripts/loop-next.mjs
+```
+
+It reads `.loop/state.json`, `ROADMAP.md`, `docs/QUESTIONS.md` and
+`docs/PRODUCT.md`, and answers with one action — `stop`, `wait`,
+`hardening`, `audit`, `split`, `item` or `plan` — plus the list of things only
+a person can unblock. It is this section and §2 as code, with tests
+(`tests/loop-next.test.ts`). If its answer and your own reading of this file
+disagree, follow the script, and file the disagreement as a roadmap item: one
+of the two has a bug. The rules it implements:
+
+- `paused == true` → **stop now.** Change nothing. `paused` is a person's
+  switch: **the loop never sets it**, not even to stop itself (§9).
 - `iteration >= budget.max_iterations`, or now is past `budget.stop_after` →
-  **stop** and disable the Routine (§9).
-- `consecutive_failures >= 3` → **stop**, append to `docs/QUESTIONS.md`, and
-  disable the Routine. Three failures in a row means something structural is
-  wrong and a fourth burns tokens for nothing.
+  **stop.** The selector starts warning three days or five iterations ahead,
+  so a person hears about it before it happens.
+- `consecutive_failures >= 3` → **stop**, append to `docs/QUESTIONS.md`.
+  Three failures in a row means something structural is wrong and a fourth
+  burns tokens for nothing.
+- **Concurrency lease.** If `current_item` is not null and `claimed_at` is
+  under 90 minutes old, another iteration is live: **stop immediately and
+  change nothing.** If it is older than 90 minutes the claim is stale — steal
+  it, and record in `docs/JOURNAL.md` that the earlier iteration was
+  abandoned. The selector reports it as `stale_claim` and, if the abandoned
+  item is still `in-progress`, hands it back to you (`via: resume`).
+- Otherwise §2 decides.
 
-**Concurrency lease.** If `current_item` is not null and `claimed_at` is under
-90 minutes old, another iteration is live: **stop immediately and change
-nothing.** If it is older than 90 minutes the claim is stale — steal it, and
-record in `docs/JOURNAL.md` that the earlier iteration was abandoned.
+A `stop` or `wait` costs a minute: say so, quote the reason and the
+`needs a human` list, and end. Do not re-derive the analysis by hand.
 
 ## 1. Orient (read only, ~10 minutes)
 
@@ -136,13 +203,21 @@ Read in this order:
 5. `ROADMAP.md`
 6. `docs/QUESTIONS.md` — is anything answered that was blocking?
 
-Then check CI on the previous commit, **if you have GitHub tools at all**.
+Then check CI on the previous commit, **if you have GitHub tools at all** —
+and **while `Q-003` is `[open]`, skip this check entirely.** Iterations 8 to 42
+each spent tool calls re-confirming the same never-scheduled signature, and
+nothing about it can change from inside a session. The check comes back the
+moment a person marks `Q-003` answered.
 
-Sessions fired by the Routine run without connector (`mcp__github__*`) tools, so
-usually you will not. That is fine and it is not a blocker: `git push` works
-through the container's credentials, and `pnpm run verify` is the real gate.
-If `mcp__github__actions_list` is unavailable, skip straight to §2 — do not try
-to work around it with `curl`, and do not treat the absence as a failure.
+Connector tools (`mcp__github__*`) are often present but **deferred**: their
+names appear in a system reminder, and each must be loaded with ToolSearch
+(`select:mcp__github__actions_list`) before it can be called. **Search before
+you conclude they are absent.** Iteration 43 recorded "no `mcp__github__*`
+tools were available this firing" and then rewrote PR #1's description, which
+takes one of them. When they are genuinely absent, that is fine and not a
+blocker: `git push` works through the container's credentials, and
+`pnpm run verify` is the real gate. Skip straight to §2 — do not try to work
+around it with `curl`, and do not treat the absence as a failure.
 
 When you *do* have the tools (`mcp__github__actions_list`, then `get_job_logs`
 for any failure):
@@ -166,15 +241,28 @@ commit you can push will fix it. In that case:
 
 ## 2. Select exactly one item
 
-Take the **topmost `todo` item in `ROADMAP.md` whose dependencies are all
-`done`** — unless an override applies:
+Do what `node scripts/loop-next.mjs` answered (§0). It takes the **topmost
+workable item in `ROADMAP.md` whose dependencies are all `done`** — unless an
+override applies:
 
 | Condition | Do this instead |
 |---|---|
-| CI is red | Fix CI |
+| CI is red | Fix CI (the selector cannot see CI; this one is yours) |
 | `iteration - last_hardening_iteration >= 5` | **HARDENING** (§6) |
 | `iteration - last_audit_iteration >= 10` | **AUDIT** (§7) |
 | The selected item is size `L` | **Split it** into 2–4 `S`/`M` items, commit `ROADMAP.md`, end the iteration. Splitting is a complete iteration. |
+| No item is workable | **PLAN** (§11). A dry roadmap is not a stop. |
+| The only items left are proposals inside their 24-hour review window | **Wait**: end the firing with the `needs a human` list. |
+
+"Workable" means any of:
+
+- `todo`;
+- `in-progress` with no live claim — an iteration died holding it (`via: resume`);
+- `blocked`, with every question in its `**Blocked by:**` line marked
+  `[answered]` in `docs/QUESTIONS.md` — read the answer before you start
+  (`via: unblock`);
+- `proposed`, once 24 hours have passed since its `**Proposed:**` timestamp
+  without a person rejecting it (`via: promote`).
 
 Do not take a second item because the first was quick. One item per iteration is
 the whole point; surplus energy goes into tests, not scope.
@@ -182,7 +270,8 @@ the whole point; surplus energy goes into tests, not scope.
 **Claim it**: set `current_item`, `claimed_at` (ISO 8601) and `claimed_by` in
 `.loop/state.json`, set the item's status to `in-progress`, then
 `git commit -m "<ID>: claim" && git push`. **Push before implementing** — this
-is what stops two overlapping iterations doing the same work.
+is what stops two overlapping iterations doing the same work. A PLAN iteration
+claims with `current_item: "PLAN"` and commits `PLAN: claim`.
 
 ## 3. Implement
 
@@ -233,8 +322,10 @@ Re-run `pnpm run verify` after any review fix.
    `claimed_at: null`, `last_outcome`, `consecutive_failures: 0`, and
    `test_count_floor` = the new total test count.
 5. Commit as `<ITEM-ID>: <imperative summary>`, then push.
-6. Refresh the draft PR description (PR #1) with Done / In progress / Next 3 —
-   **only if you have GitHub tools.** Without them the pushed commits and
+6. Refresh the draft PR description (PR #1) with Done / In progress / Next 3 /
+   **Needs a human** — the last one is `node scripts/loop-next.mjs`'s list, run
+   after your landing commit, verbatim. **Only if you have GitHub tools** (look
+   for deferred ones first, §1). Without them the pushed commits and
    `docs/JOURNAL.md` are the record, which is enough. Do not block on this.
 
 ## 6. HARDENING iteration (no new features)
@@ -292,20 +383,46 @@ hard bug, an unfamiliar API, or a failing test. Those are the job.
 
 2. Set the item's status to `blocked` and add `**Blocked by:** Q-004`.
 3. Reset the claim, commit, push.
-4. **Then continue**: go back to §2 and take the next unblocked `todo`. One
-   blocked item does not stop the loop.
+4. **Then continue**: go back to §2 and take the next workable item. One
+   blocked item does not stop the loop — and if it was the last one, §2 sends
+   you to PLAN, which proposes the work that does not need it.
+
+From then on `node scripts/loop-next.mjs` names the item and its open question
+in its `needs a human` list on every firing, and hands the item back
+(`via: unblock`) on the first firing after a person marks the question
+`[answered]`. Nobody has to remember to flip the status.
 
 If a question has been open for more than 24 hours and its recommendation is
 safe, take your own recommendation, record an ADR, and proceed. The loop should
-degrade toward progress, not toward deadlock.
+degrade toward progress, not toward deadlock. A recommendation that means
+"keep waiting" (like `Q-002`'s) is not one you can take: the item stays
+blocked, and the loop works around it.
 
 ## 9. Ending the loop
 
-Stop and disable the Routine when: no `todo` items remain, the budget is
-exhausted, there have been 3 consecutive failures, or `paused` is true.
+The loop stops when `node scripts/loop-next.mjs` answers `stop`: `paused` is
+true, the budget is spent, there have been 3 consecutive failures, another
+iteration holds a live claim, or nothing is workable **and** `PLAN` has
+already recorded that `docs/PRODUCT.md` has nothing left to plan
+(`plan_exhausted_for`, §11).
 
-Disable with `update_trigger({trigger_id, enabled: false})` — **do not delete
-it**, the user may want to resume. Then send one notification saying why.
+**"No `todo` items remain" is not a stop.** It used to be. On 2026-09-10
+iteration 43 found every item `done`, `split` or `blocked` on `Q-002`, set
+`paused: true` because it could not reach the Routine, and the loop never ran
+again — with the bird's flight home, the Columbarium, the Atlas and
+Passage's dispatch feed from `docs/PRODUCT.md` §7 still without a single
+roadmap item. A dry roadmap now means PLAN (§11).
+
+**Never set `paused` yourself.** It is a person's switch. Every other stop
+condition is re-checked on every firing, so a firing that finds the loop
+stopped costs a minute and says why; a `paused` the loop set for itself is a
+stop nobody remembers to undo.
+
+When the stop is the budget or three failures, you may also disable the
+Routine with `mcp__claude-code-remote__update_trigger` (`enabled: false`; it is
+usually deferred — load it with ToolSearch). **Never delete it**: a person may
+want to resume. If the tool is not there, that is fine: the next firings stop
+on their own. Either way, the final message carries the `needs a human` list.
 
 ## 10. When you cannot get to green
 
@@ -317,3 +434,55 @@ it**, the user may want to resume. Then send one notification saying why.
 3. Increment `consecutive_failures`, reset the claim, set the item back to
    `todo` with a `**Previous attempt failed:**` note carrying what you learned.
 4. Commit and push **that state only**. **Never push a red branch.**
+
+## 11. PLAN iteration (the roadmap ran dry)
+
+`node scripts/loop-next.mjs` answers `plan` when no item is workable. Your job
+is to propose the next milestone **from `docs/PRODUCT.md` and nothing else**,
+for a person to veto, and then let the loop build it.
+
+1. **Claim**: `current_item: "PLAN"`, commit `PLAN: claim`, push.
+2. **Re-read `docs/PRODUCT.md` in full.** Walk §3–§9 and list each concrete
+   commitment: an invariant, a §6 canon rule, each §7 mechanic, each §9
+   privacy commitment, the three notifications of pillar 5. For each, search
+   `ROADMAP.md` — every status, `rejected` included — for an item that
+   already covers it.
+3. **Uncovered commitments that can be built and verified in this container**
+   become the next milestone, appended after the last one: `## M<n> — <name>`
+   with a **Goal** and a **Demo** line like M1's, and 3–8 items in the house
+   format (Why / Do / Do NOT / Acceptance criteria written as test names /
+   Touches), size `S` or `M`. "Verifiable here" means the pure engine in
+   `packages/flight-sim`, migrations and RLS against PGlite, screens behind
+   injected deps, scripts — the same line `README.md` draws. Each item opens:
+
+   ```
+   **Status:** proposed · **Size:** M · **Depends on:** M1-09 · **Proposed:** 2026-10-25T12:00:00Z
+   **From:** docs/PRODUCT.md §7 (The Columbarium)
+   ```
+
+   `gate:roadmap` refuses a proposal without a `**From:**` line citing a real
+   PRODUCT.md section, without a `**Proposed:**` timestamp, or whose title
+   names a §8 non-goal.
+4. **Do not propose:**
+   - anything §8 forbids — above all a fast path, an undo, or a streak
+     (`CLAUDE.md`). These are the three things this loop is most likely to
+     drift toward, and a PLAN iteration is where it would happen;
+   - anything PRODUCT.md does not ask for. If an idea needs a sentence that is
+     not in PRODUCT.md to justify it, it is a question for
+     `docs/QUESTIONS.md`, not an item;
+   - work that needs a live backend, credentials or spend (`Q-002`). It stays
+     behind its question; propose the part of it that does not;
+   - anything a person already marked `rejected`.
+5. **If nothing is left uncovered, propose nothing.** Set `plan_exhausted_for`
+   in `.loop/state.json` to the `product_hash` the selector printed. From then
+   on a dry roadmap is a `stop` — until a person changes PRODUCT.md (the hash
+   moves) or answers a blocking question (the item comes back as `unblock`).
+6. **Land** like §5: `iteration += 1`, a journal block, commit
+   `PLAN: propose M<n> — <name>` (or `PLAN: PRODUCT.md is fully planned`).
+   Put the proposal at the top of your final message: a person has
+   **24 hours** to veto an item (`**Status:** rejected`) or approve it early
+   (`**Status:** todo`). After that the selector promotes the proposals one at
+   a time, topmost first (`via: promote`), and each is built like any `todo`.
+
+A PLAN iteration writes `ROADMAP.md`, `docs/JOURNAL.md` and
+`.loop/state.json` only. No code, and never `docs/PRODUCT.md`.
